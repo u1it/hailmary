@@ -8,6 +8,10 @@ const Tab3 = {
     _asteroidGeo: null,
     _featuredGeo: null,
     _featuredMat: null,
+    _petroGeo:    null,
+    _petroMat:    null,
+    _beaconGeo:   null,
+    _beaconMat:   null,
     _planetUnis:  null,
     _scroll:  0,
     _scrollT: 0,
@@ -17,7 +21,7 @@ const Tab3 = {
     _touchY:  0,
     _label:   null,
 
-    // ── 큰 별 (Sol / Tau Ceti) 포인트 스프라이트 셰이더 ─
+    // ── 큰 별 (Sol / 40 Eridani A) 포인트 스프라이트 셰이더 ─
     FEAT_VERT: `
         uniform  float uSize;
         attribute float aScale;
@@ -126,8 +130,11 @@ const Tab3 = {
             return      mix(c6,c7,(t-0.85)/0.15);
         }
         void main(){
-            vec2 rotUV = vec2(fract(vUv.x + uTime * 0.004), vUv.y);
-            vec2 p = (rotUV - 0.5) * 3.5;
+            vec3 nSurf = normalize(vWorldPos);
+            float lon = atan(nSurf.z, nSurf.x);
+            float lat = asin(clamp(nSurf.y, -1.0, 1.0));
+            vec2 cyc = vec2(cos(lon + uTime * 0.05), sin(lon + uTime * 0.05));
+            vec2 p = vec2(cyc.x * 2.05 + lat * 1.65, cyc.y * 2.05 - lat * 1.45);
             float t = uTime * 0.04;
             vec2 q = vec2(fbm(p+vec2(t,t*0.7)), fbm(p+vec2(3.2+t*0.9,1.7)));
             vec2 r = vec2(fbm(p+4.0*q+vec2(1.7+t*0.2,9.2+t*0.15)),
@@ -176,8 +183,11 @@ const Tab3 = {
             return      mix(c6,c7,(t-0.89)/0.11);
         }
         void main(){
-            vec2 rotUV = vec2(fract(vUv.x + uTime * 0.005), vUv.y);
-            vec2 p = (rotUV - 0.5) * 3.5;
+            vec3 nSurf = normalize(vWorldPos);
+            float lon = atan(nSurf.z, nSurf.x);
+            float lat = asin(clamp(nSurf.y, -1.0, 1.0));
+            vec2 cyc = vec2(cos(lon + uTime * 0.05), sin(lon + uTime * 0.05));
+            vec2 p = vec2(cyc.x * 2.1 + lat * 1.7, cyc.y * 2.1 - lat * 1.5);
             float t = uTime * 0.065;
             vec2 q = vec2(fbm(p+vec2(t,t*0.68)), fbm(p+vec2(3.18+t*0.88,1.74)));
             vec2 r = vec2(fbm(p+4.1*q+vec2(1.72+t*0.22,9.24+t*0.15)),
@@ -194,21 +204,20 @@ const Tab3 = {
     `,
 
     BODIES: [
-        { type:'star',   name:'Sol',      r:2.2,  color:0xffdd55, glow:0xff8800, pos:[ 0,    0,    0  ] },
-        { type:'planet', name:'Earth',    r:0.42, color:0x2a70bb, glow:0x55aaee, pos:[ 3.6, -0.4, -7.6 ] },
-        { type:'star',   name:'TauCeti',  r:1.85, color:0xff9944, glow:0xff5500, pos:[-2.4,  1.6, -71 ] },
-        { type:'planet', name:'Eridian',  r:0.62, color:0x0b3020, glow:0x22ee66, pos:[ 2.6,  0.3, -79 ] },
+        { type:'star',   name:'Sol',        r:2.2,  color:0xffdd55, glow:0xff8800, pos:[ 0.0,  0.0,   0.0 ] },
+        { type:'planet', name:'Earth',      r:0.42, color:0x2a70bb, glow:0x55aaee, pos:[ 3.5, -0.3,  -5.0 ] },
+        { type:'star',   name:'40EridaniA', r:1.85, color:0xffa36b, glow:0xff5a20, pos:[-2.1,  1.4, -68.5 ] },
+        { type:'planet', name:'Eridian',    r:0.62, color:0x0b3020, glow:0x22ee66, pos:[ 2.4,  0.2, -78.0 ] },
     ],
 
     LABELS: [
         { t:0.00, text:'Sol System' },
         { t:0.08, text:'Earth Orbit' },
-        { t:0.20, text:'Leaving the Solar System' },
-        { t:0.36, text:'Interstellar Cruise' },
-        { t:0.52, text:'Asteroid Drift Zone' },
-        { t:0.68, text:'Tau Ceti in Sight' },
-        { t:0.82, text:'Tau Ceti System' },
-        { t:0.93, text:'Eridian Orbit' },
+        { t:0.18, text:'Solar Escape' },
+        { t:0.35, text:'Interstellar Cruise' },
+        { t:0.70, text:'Approaching 40 Eridani' },
+        { t:0.82, text:'Erid System' },
+        { t:0.93, text:'First Contact Zone' },
     ],
 
     _makeGlow(r, color, opacity) {
@@ -230,7 +239,7 @@ const Tab3 = {
         this.camera.position.set(0, 0, 14);
 
         // ── 별빛 셰이더 파티클 ────────────────────
-        const starCount = 4000;
+        const starCount = 5600;
         const sp  = new Float32Array(starCount * 3);
         const sc  = new Float32Array(starCount * 3);
         const sSc = new Float32Array(starCount);
@@ -242,9 +251,9 @@ const Tab3 = {
 
             // 크기: 대부분 작고, 일부 중간, 소수 크게
             const rv = Math.random();
-            if      (rv < 0.72) sSc[i] = 0.2 + Math.random() * 0.5;
-            else if (rv < 0.93) sSc[i] = 0.6 + Math.random() * 1.0;
-            else                sSc[i] = 1.6 + Math.random() * 2.2;
+            if      (rv < 0.66) sSc[i] = 0.25 + Math.random() * 0.65;
+            else if (rv < 0.90) sSc[i] = 0.85 + Math.random() * 1.35;
+            else                sSc[i] = 2.0 + Math.random() * 2.7;
 
             // 색상: 흰색/파란별/노란별/주황별
             const ct = Math.random();
@@ -271,7 +280,7 @@ const Tab3 = {
 
         this._starGeo = sGeo;
         this._starMat = new THREE.ShaderMaterial({
-            uniforms:       { uSize: { value: 1.3 } },
+            uniforms:       { uSize: { value: 1.9 } },
             vertexShader:   this.VERT,
             fragmentShader: this.FRAG,
             transparent:    true,
@@ -309,7 +318,7 @@ const Tab3 = {
             depthWrite:     false
         })));
 
-        // ── 항성 포인트 스프라이트 (Sol, Tau Ceti) ──
+        // ── 항성 포인트 스프라이트 (Sol, 40 Eridani A) ──
         const stars = this.BODIES.filter(b => b.type === 'star');
         const fp    = new Float32Array(stars.length * 3);
         const fc    = new Float32Array(stars.length * 3);
@@ -320,7 +329,7 @@ const Tab3 = {
             fc[i*3]   = ((hex >> 16) & 0xff) / 255;
             fc[i*3+1] = ((hex >>  8) & 0xff) / 255;
             fc[i*3+2] = ( hex        & 0xff) / 255;
-            fs[i] = b.r * 5.5;   // Sol≈12.1, TauCeti≈9.6
+            fs[i] = b.r * 5.5;   // Sol≈12.1, 40EridaniA≈10.1
         });
         this._featuredGeo = new THREE.BufferGeometry();
         this._featuredGeo.setAttribute('position', new THREE.BufferAttribute(fp, 3));
@@ -335,6 +344,75 @@ const Tab3 = {
             depthWrite:     false
         });
         this.scene.add(new THREE.Points(this._featuredGeo, this._featuredMat));
+
+        // ── Petrova Line (밝은 핑크색 촘촘한 경로) ───
+        const pCount = 2200;
+        const pp = new Float32Array(pCount * 3);
+        const pc = new Float32Array(pCount * 3);
+        const ps = new Float32Array(pCount);
+        const pStart = new THREE.Vector3(1.8, -0.2, -13.5);   // Solar Escape 부근
+        const pEnd   = new THREE.Vector3(-2.1, 1.4, -68.5);   // 40 Eridani A 부근
+        for (let i = 0; i < pCount; i++) {
+            const u = i / (pCount - 1);
+            const wav = Math.sin(u * Math.PI * 10.0) * 0.25 + Math.sin(u * Math.PI * 24.0) * 0.08;
+            const cx = lerp(pStart.x, pEnd.x, u) + Math.sin(u * Math.PI * 7.2) * 0.25;
+            const cy = lerp(pStart.y, pEnd.y, u) + wav * 0.55;
+            const cz = lerp(pStart.z, pEnd.z, u);
+            pp[i*3]   = cx + (Math.random() - 0.5) * 0.16;
+            pp[i*3+1] = cy + (Math.random() - 0.5) * 0.16;
+            pp[i*3+2] = cz + (Math.random() - 0.5) * 0.12;
+
+            const type = Math.random(); // 핑크/레드 중심으로 강화
+            if (type < 0.52) {
+                pc[i*3] = 0.98 + Math.random()*0.02; pc[i*3+1] = 0.05+Math.random()*0.10; pc[i*3+2] = 0.50+Math.random()*0.35;
+            } else if (type < 0.88) {
+                pc[i*3] = 0.95 + Math.random()*0.05; pc[i*3+1] = 0.01+Math.random()*0.05; pc[i*3+2] = 0.20+Math.random()*0.15;
+            } else {
+                pc[i*3] = 1.00; pc[i*3+1] = 0.10+Math.random()*0.10; pc[i*3+2] = 0.40+Math.random()*0.18;
+            }
+            ps[i] = 0.80 + Math.random() * 1.35;
+        }
+        this._petroGeo = new THREE.BufferGeometry();
+        this._petroGeo.setAttribute('position', new THREE.BufferAttribute(pp, 3));
+        this._petroGeo.setAttribute('aColor',   new THREE.BufferAttribute(pc, 3));
+        this._petroGeo.setAttribute('aScale',   new THREE.BufferAttribute(ps, 1));
+        this._petroMat = new THREE.ShaderMaterial({
+            uniforms:       { uSize: { value: 2.35 } },
+            vertexShader:   this.VERT,
+            fragmentShader: this.FRAG,
+            transparent:    true,
+            blending:       THREE.AdditiveBlending,
+            depthWrite:     false
+        });
+        this.scene.add(new THREE.Points(this._petroGeo, this._petroMat));
+
+        // ── 라벨 구간마다 비주얼 앵커(비어 보이는 구간 보강) ──
+        const bz = t => 2 - t * 86;
+        const bc = this.LABELS.length;
+        const bp = new Float32Array(bc * 3);
+        const bcol = new Float32Array(bc * 3);
+        const bs = new Float32Array(bc);
+        this.LABELS.forEach((l, i) => {
+            const v = i / Math.max(1, bc - 1);
+            bp[i*3] = Math.sin(v * Math.PI * 2.4) * 3.4;
+            bp[i*3+1] = Math.cos(v * Math.PI * 1.7) * 1.5;
+            bp[i*3+2] = bz(l.t);
+            bcol[i*3] = 1.0; bcol[i*3+1] = 0.30 + 0.12 * Math.sin(i); bcol[i*3+2] = 0.55;
+            bs[i] = (i === 0 || i === bc - 1) ? 6.5 : 4.2;
+        });
+        this._beaconGeo = new THREE.BufferGeometry();
+        this._beaconGeo.setAttribute('position', new THREE.BufferAttribute(bp, 3));
+        this._beaconGeo.setAttribute('aColor',   new THREE.BufferAttribute(bcol, 3));
+        this._beaconGeo.setAttribute('aScale',   new THREE.BufferAttribute(bs, 1));
+        this._beaconMat = new THREE.ShaderMaterial({
+            uniforms:       { uSize: { value: 1.5 } },
+            vertexShader:   this.FEAT_VERT,
+            fragmentShader: this.FRAG,
+            transparent:    true,
+            blending:       THREE.AdditiveBlending,
+            depthWrite:     false
+        });
+        this.scene.add(new THREE.Points(this._beaconGeo, this._beaconMat));
 
         // ── 행성 구체 (Earth, Eridian) — 표면 셰이더 ─
         this._objects    = [];
@@ -430,10 +508,16 @@ const Tab3 = {
         if (this._asteroidGeo) this._asteroidGeo.dispose();
         if (this._featuredGeo) this._featuredGeo.dispose();
         if (this._featuredMat) this._featuredMat.dispose();
+        if (this._petroGeo)    this._petroGeo.dispose();
+        if (this._petroMat)    this._petroMat.dispose();
+        if (this._beaconGeo)   this._beaconGeo.dispose();
+        if (this._beaconMat)   this._beaconMat.dispose();
         if (this._label) this._label.textContent = 'Sol System';
         this._objects = [];
         this._starGeo = this._starMat = this._asteroidGeo = null;
         this._featuredGeo = this._featuredMat = null;
+        this._petroGeo = this._petroMat = null;
+        this._beaconGeo = this._beaconMat = null;
         this._planetUnis = null;
         this.scene = this.camera = null;
     }
