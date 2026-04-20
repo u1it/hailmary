@@ -159,6 +159,7 @@ h2 {
     color: var(--dim);
     margin-top: 1.5rem;
 }
+.hint-mobile { display: none; }
 
 .enter-hint {
     font-family: 'Cormorant Garamond', serif;
@@ -371,5 +372,11 @@ h2 {
     .vt.right { margin-right: 5vw; }
     .vt { padding: calc(var(--nav-h) + 1.2rem) 1.2rem 1.2rem; }
 
-    .hint { display: none; }
+    .hint-pc { display: none; }
+    .hint-mobile {
+        display: block;
+        letter-spacing: 0.18em;
+        line-height: 1.5;
+        max-width: min(84vw, 440px);
+    }
 }
