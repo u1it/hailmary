@@ -11,12 +11,10 @@ const Tab2 = {
 
     // ── 행성 표면 버텍스 셰이더 ─────────────────
     VERT: `
-        varying vec2 vUv;
         varying vec3 vWorldPos;
         varying vec3 vNormal;
 
         void main() {
-            vUv       = uv;
             vNormal   = normalize(normalMatrix * normal);
             vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
@@ -29,7 +27,6 @@ const Tab2 = {
         uniform vec3  uHit;
         uniform float uHitStr;
 
-        varying vec2 vUv;
         varying vec3 vWorldPos;
         varying vec3 vNormal;
 
@@ -55,26 +52,30 @@ const Tab2 = {
             vec3 c3=vec3(0.100,0.680,0.075);
             vec3 c4=vec3(0.500,0.840,0.038);
             vec3 c5=vec3(0.920,0.560,0.018);
-            vec3 c6=vec3(1.000,0.310,0.008);
-            vec3 c7=vec3(1.000,0.680,0.160);
+            vec3 c6=vec3(1.000,0.380,0.010);
+            vec3 c7=vec3(1.000,0.720,0.170);
+            vec3 c8=vec3(1.000,0.540,0.095);
 
             if(t<0.14) return mix(c0,c1,t/0.14);
             if(t<0.30) return mix(c1,c2,(t-0.14)/0.16);
             if(t<0.48) return mix(c2,c3,(t-0.30)/0.18);
             if(t<0.62) return mix(c3,c4,(t-0.48)/0.14);
             if(t<0.76) return mix(c4,c5,(t-0.62)/0.14);
-            if(t<0.89) return mix(c5,c6,(t-0.76)/0.13);
-            return      mix(c6,c7,(t-0.89)/0.11);
+            if(t<0.88) return mix(c5,c6,(t-0.76)/0.12);
+            if(t<0.95) return mix(c6,c7,(t-0.88)/0.07);
+            return      mix(c7,c8,(t-0.95)/0.05);
         }
 
         void main(){
-            // UV 기반 좌표 — uTime으로 자전처럼 천천히 이동
-            vec2 rotUV = vec2(fract(vUv.x + uTime * 0.005), vUv.y);
-            vec2 p = (rotUV - 0.5) * 3.5;
+            // 구면 좌표 기반 순환 좌표 (UV seam 절단 방지)
+            vec3 nSurf = normalize(vWorldPos);
+            float lon = atan(nSurf.z, nSurf.x);
+            float lat = asin(clamp(nSurf.y, -1.0, 1.0));
+            vec2 cyc = vec2(cos(lon + uTime * 0.42), sin(lon + uTime * 0.42));
+            vec2 p = vec2(cyc.x * 2.1 + lat * 1.7, cyc.y * 2.1 - lat * 1.5);
             float t = uTime * 0.065;
 
             // 마우스 파문 (구면 대원 거리 기반)
-            vec3 nSurf = normalize(vWorldPos);
             vec3 nHit  = normalize(uHit);
             float hitAng = acos(clamp(dot(nSurf, nHit), -1.0, 1.0));
             float ripple = sin(hitAng * 9.0 - uTime * 4.5)
@@ -97,8 +98,10 @@ const Tab2 = {
             float lum = dot(col, vec3(0.299,0.587,0.114));
             col = mix(col, vec3(lum*0.3+0.003), (1.0-f)*0.25);
 
-            // 밝은 영역 채도 강화
+            // 밝은 영역 채도 강화 + 물감 번짐 같은 주황 레이어
             col = mix(col, col*1.22, smoothstep(0.60,1.0,f)*0.52);
+            float orangeBloom = smoothstep(0.58, 0.95, f) * (0.6 + 0.4 * fbm(p * 2.0 - t));
+            col = mix(col, col + vec3(0.26, 0.10, 0.01), orangeBloom * 0.45);
 
             // 림 다크닝 (구 형태감)
             float rimDark = dot(normalize(cameraPosition - vWorldPos), vNormal);
@@ -166,7 +169,7 @@ const Tab2 = {
         };
 
         this._planet = new THREE.Mesh(
-            new THREE.SphereGeometry(4.2, 96, 96),
+            new THREE.SphereGeometry(4.2, 128, 128),
             new THREE.ShaderMaterial({
                 uniforms:       this._uni,
                 vertexShader:   this.VERT,
@@ -177,14 +180,14 @@ const Tab2 = {
 
         // ── 대기권 글로우 (림 빛) ─────────────────
         this._atmMesh = new THREE.Mesh(
-            new THREE.SphereGeometry(4.48, 48, 48),
+            new THREE.SphereGeometry(4.5, 64, 64),
             new THREE.ShaderMaterial({
                 vertexShader:   this.ATM_VERT,
                 fragmentShader: this.ATM_FRAG,
                 transparent:    true,
                 blending:       THREE.AdditiveBlending,
                 depthWrite:     false,
-                side:           THREE.FrontSide
+                side:           THREE.BackSide
             })
         );
         this.scene.add(this._atmMesh);

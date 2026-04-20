@@ -9,6 +9,7 @@ const Tab1 = {
     _vel:   null,
     _col:   null,
     _sun:   null,
+    _sunUni: null,
     _mwx:   0,
     _mwy:   0,
 
@@ -59,6 +60,63 @@ const Tab1 = {
             // 중심 → 흰색, 바깥 → 입자 색
             vec3 col = mix(vec3(1.0, 0.96, 0.90), vColor, clamp(d * 3.2, 0.0, 1.0));
             gl_FragColor = vec4(col * brightness, brightness);
+        }
+    `,
+
+    SUN_VERT: `
+        varying vec3 vWorldPos;
+        varying vec3 vNormal;
+        void main() {
+            vNormal = normalize(normalMatrix * normal);
+            vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+
+    SUN_FRAG: `
+        uniform float uTime;
+        varying vec3 vWorldPos;
+        varying vec3 vNormal;
+
+        float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7))) * 43758.5453123); }
+        float noise(vec2 p){
+            vec2 i = floor(p), f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0,0.0)), f.x),
+                       mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0,1.0)), f.x), f.y);
+        }
+        float fbm(vec2 p){
+            float v = 0.0;
+            float a = 0.55;
+            for(int i=0;i<5;i++){
+                v += noise(p) * a;
+                p = p * 2.03 + vec2(3.1, 5.9);
+                a *= 0.5;
+            }
+            return v;
+        }
+
+        void main() {
+            vec3 n = normalize(vNormal);
+            float lon = atan(n.z, n.x);
+            float lat = asin(clamp(n.y, -1.0, 1.0));
+            vec2 cyc = vec2(cos(lon + uTime * 0.7), sin(lon + uTime * 0.7));
+            vec2 p = vec2(cyc.x * 2.2 + lat * 1.8, cyc.y * 2.2 - lat * 1.6);
+
+            float n1 = fbm(p * 2.4 + uTime * 0.8);
+            float n2 = fbm(p * 4.8 - uTime * 1.2);
+            float f = clamp(n1 * 0.68 + n2 * 0.35, 0.0, 1.0);
+
+            vec3 core = vec3(1.0, 0.95, 0.78);
+            vec3 hot  = vec3(1.0, 0.62, 0.18);
+            vec3 deep = vec3(1.0, 0.28, 0.05);
+            vec3 col = mix(core, hot, smoothstep(0.15, 0.72, f));
+            col = mix(col, deep, smoothstep(0.62, 1.0, f));
+
+            float fres = pow(1.0 - abs(dot(normalize(cameraPosition - vWorldPos), n)), 2.1);
+            col += vec3(1.0, 0.5, 0.12) * fres * 0.6;
+
+            gl_FragColor = vec4(col, 0.9);
         }
     `,
 
@@ -127,25 +185,35 @@ const Tab1 = {
 
         this.scene.add(new THREE.Points(this._geo, this._mat));
 
-        // ── 태양 글로우 (마우스) ──────────────────
+        // ── 태양 셰이더 + 글로우 레이어 (마우스) ─────
         this._sun = new THREE.Group();
+        this._sunUni = { uTime: { value: 0 } };
+        this._sun.add(new THREE.Mesh(
+            new THREE.SphereGeometry(0.78, 48, 48),
+            new THREE.ShaderMaterial({
+                uniforms: this._sunUni,
+                vertexShader: this.SUN_VERT,
+                fragmentShader: this.SUN_FRAG,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            })
+        ));
         [
-            { r: 0.18, color: 0xffffff,  op: 0.96 },
-            { r: 0.55, color: 0xffee88,  op: 0.32 },
-            { r: 1.20, color: 0xff9922,  op: 0.13 },
-            { r: 2.60, color: 0xff4400,  op: 0.048 },
-            { r: 5.20, color: 0xff2200,  op: 0.016 },
+            { r: 1.35, color: 0xffa64a,  op: 0.2 },
+            { r: 2.70, color: 0xff5f1a,  op: 0.08 },
+            { r: 5.60, color: 0xff2d08,  op: 0.025 },
         ].forEach(({ r, color, op }) => {
-            const m = new THREE.Mesh(
-                new THREE.SphereGeometry(r, 16, 16),
+            this._sun.add(new THREE.Mesh(
+                new THREE.SphereGeometry(r, 24, 24),
                 new THREE.MeshBasicMaterial({
                     color, transparent: true, opacity: op,
                     blending: THREE.AdditiveBlending, depthWrite: false
                 })
-            );
-            this._sun.add(m);
+            ));
         });
-        this._sun.position.set(9999, 9999, 0);
+        // 초기 진입 시에도 중앙 태양이 실제로 보이도록 기본 위치를 원점으로 설정
+        this._sun.position.set(0, 0, 0);
         this.scene.add(this._sun);
     },
 
@@ -204,6 +272,7 @@ const Tab1 = {
         if (this._sun) {
             const pulse = 1 + Math.sin(elapsed * 3.5) * 0.06;
             this._sun.scale.setScalar(pulse);
+            if (this._sunUni) this._sunUni.uTime.value = elapsed;
         }
     },
 
@@ -227,7 +296,7 @@ const Tab1 = {
             this._sun.children.forEach(c => { c.geometry.dispose(); c.material.dispose(); });
         }
         this._geo = this._mat = this._home = this._pos = this._vel = this._col = null;
-        this._scales = this._sun = null;
+        this._scales = this._sun = this._sunUni = null;
         this.scene = this.camera = null;
     }
 };
