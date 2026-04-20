@@ -7,6 +7,8 @@ const Home = {
     _origins: null,
     _phases:  null,
     _scales:  null,
+    _aurora:  null,
+    _auroraUni: null,
 
     COUNT: 2600,
 
@@ -46,6 +48,51 @@ const Home = {
 
             vec3 col = mix(vec3(1.0, 0.97, 0.92), vColor, clamp(d * 3.0, 0.0, 1.0));
             gl_FragColor = vec4(col * brightness, brightness);
+        }
+    `,
+
+    AURORA_VERT: `
+        varying vec3 vWorldPos;
+        void main() {
+            vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+
+    AURORA_FRAG: `
+        uniform float uTime;
+        varying vec3 vWorldPos;
+
+        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453123); }
+        float noise(vec2 p){
+            vec2 i = floor(p), f = fract(p);
+            f = f*f*(3.0-2.0*f);
+            return mix(mix(hash(i), hash(i+vec2(1.0,0.0)), f.x),
+                       mix(hash(i+vec2(0.0,1.0)), hash(i+vec2(1.0,1.0)), f.x), f.y);
+        }
+        float fbm(vec2 p){
+            float v = 0.0, a = 0.55;
+            mat2 r = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.5));
+            for(int i=0;i<5;i++){ v += a*noise(p); p = r*p*2.03 + vec2(2.4,7.7); a *= 0.52; }
+            return v;
+        }
+
+        void main() {
+            vec2 p = vWorldPos.xy * 0.13;
+            float t = uTime * 0.07;
+            float bandA = fbm(vec2(p.x * 1.7 + t, p.y * 0.5 - t * 0.2));
+            float bandB = fbm(vec2(p.x * 1.1 - t * 0.6, p.y * 0.7 + t * 0.4));
+            float mixV = smoothstep(0.30, 0.92, bandA * 0.62 + bandB * 0.58);
+            float topFade = smoothstep(-12.0, -2.0, vWorldPos.y) * (1.0 - smoothstep(9.0, 16.0, vWorldPos.y));
+            float alpha = mixV * topFade * 0.34;
+
+            vec3 c0 = vec3(0.06, 0.20, 0.35);
+            vec3 c1 = vec3(0.24, 0.86, 0.74);
+            vec3 c2 = vec3(0.57, 0.45, 0.95);
+            vec3 col = mix(c0, c1, smoothstep(0.2, 0.7, bandA));
+            col = mix(col, c2, smoothstep(0.6, 1.0, bandB) * 0.55);
+
+            gl_FragColor = vec4(col, alpha);
         }
     `,
 
@@ -115,6 +162,22 @@ const Home = {
         });
 
         this.scene.add(new THREE.Points(this._geo, this._mat));
+
+        this._auroraUni = { uTime: { value: 0 } };
+        this._aurora = new THREE.Mesh(
+            new THREE.PlaneGeometry(60, 32, 1, 1),
+            new THREE.ShaderMaterial({
+                uniforms: this._auroraUni,
+                vertexShader: this.AURORA_VERT,
+                fragmentShader: this.AURORA_FRAG,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                side: THREE.DoubleSide
+            })
+        );
+        this._aurora.position.set(0, 2.8, -6);
+        this.scene.add(this._aurora);
     },
 
     tick(elapsed) {
@@ -132,6 +195,7 @@ const Home = {
         this.camera.position.x = Math.sin(elapsed * 0.07) * 0.5;
         this.camera.position.y = Math.cos(elapsed * 0.05) * 0.35;
         this.camera.lookAt(0, 0, 0);
+        if (this._auroraUni) this._auroraUni.uTime.value = elapsed;
     },
 
     onMouseMove() {},
@@ -145,7 +209,12 @@ const Home = {
     dispose() {
         if (this._geo) this._geo.dispose();
         if (this._mat) this._mat.dispose();
+        if (this._aurora) {
+            this._aurora.geometry.dispose();
+            this._aurora.material.dispose();
+        }
         this._geo = this._mat = this._origins = this._phases = null;
+        this._aurora = this._auroraUni = null;
         this.scene = this.camera = null;
     }
 };

@@ -195,19 +195,20 @@ const Tab3 = {
 
     BODIES: [
         { type:'star',   name:'Sol',      r:2.2,  color:0xffdd55, glow:0xff8800, pos:[ 0,    0,    0  ] },
-        { type:'planet', name:'Earth',    r:0.38, color:0x2a70bb, glow:0x55aaee, pos:[ 4.0, -0.4, -9  ] },
-        { type:'star',   name:'TauCeti',  r:1.75, color:0xff9944, glow:0xff5500, pos:[-4.2,  1.8, -52 ] },
-        { type:'planet', name:'Eridian',  r:0.58, color:0x0b3020, glow:0x22ee66, pos:[-2.0,  0.5, -61 ] },
+        { type:'planet', name:'Earth',    r:0.42, color:0x2a70bb, glow:0x55aaee, pos:[ 3.6, -0.4, -7.6 ] },
+        { type:'star',   name:'TauCeti',  r:1.85, color:0xff9944, glow:0xff5500, pos:[-2.4,  1.6, -71 ] },
+        { type:'planet', name:'Eridian',  r:0.62, color:0x0b3020, glow:0x22ee66, pos:[ 2.6,  0.3, -79 ] },
     ],
 
     LABELS: [
         { t:0.00, text:'Sol System' },
-        { t:0.13, text:'Leaving the Inner System' },
-        { t:0.28, text:'Interstellar Space' },
-        { t:0.44, text:'Asteroid Field' },
-        { t:0.60, text:'Approaching Tau Ceti' },
-        { t:0.75, text:'Tau Ceti System' },
-        { t:0.90, text:'Eridian' },
+        { t:0.08, text:'Earth Orbit' },
+        { t:0.20, text:'Leaving the Solar System' },
+        { t:0.36, text:'Interstellar Cruise' },
+        { t:0.52, text:'Asteroid Drift Zone' },
+        { t:0.68, text:'Tau Ceti in Sight' },
+        { t:0.82, text:'Tau Ceti System' },
+        { t:0.93, text:'Eridian Orbit' },
     ],
 
     _makeGlow(r, color, opacity) {
