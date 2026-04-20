@@ -5,6 +5,7 @@ const Tab2 = {
     _planet:   null,
     _atmMesh:  null,
     _starGeo:  null,
+    _starMat:  null,
     _uni:      null,
     _raycaster: null,
     _hitStrTarget: 0,
@@ -128,10 +129,44 @@ const Tab2 = {
         void main(){
             vec3  viewDir = normalize(cameraPosition - vWorldPos);
             float fr      = 1.0 - abs(dot(viewDir, vNormal));
-            fr = pow(fr, 2.2);
-            vec3  col  = mix(vec3(0.05,0.9,0.25), vec3(0.55,0.95,0.05), fr*0.5);
-            float alpha = fr * 0.55;
+            fr = pow(fr, 2.7);
+            vec3  col  = mix(vec3(0.04,0.62,0.22), vec3(0.35,0.78,0.12), fr*0.45);
+            float alpha = fr * 0.26;
             gl_FragColor = vec4(col, alpha);
+        }
+    `,
+
+    STAR_VERT: `
+        uniform float uSize;
+        attribute float aScale;
+        attribute vec3 aColor;
+        varying vec3 vColor;
+        void main() {
+            vColor = aColor;
+            vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+            float dist = max(-mvPos.z, 16.0);
+            float pSize = uSize * aScale * 130.0 / dist;
+            gl_PointSize = clamp(pSize, 0.8, 44.0);
+            gl_Position = projectionMatrix * mvPos;
+        }
+    `,
+
+    STAR_FRAG: `
+        varying vec3 vColor;
+        void main() {
+            vec2 uv = gl_PointCoord - vec2(0.5);
+            float d = length(uv);
+            if (d > 0.5) discard;
+            float glow = exp(-d * 7.4);
+            float hSpike = exp(-abs(uv.y) * 40.0) * exp(-abs(uv.x) * 2.4);
+            float vSpike = exp(-abs(uv.x) * 40.0) * exp(-abs(uv.y) * 2.4);
+            float d1 = exp(-abs(uv.x - uv.y) * 40.0) * exp(-length(uv) * 4.2);
+            float d2 = exp(-abs(uv.x + uv.y) * 40.0) * exp(-length(uv) * 4.2);
+            float spikes = (hSpike + vSpike) * 0.56 + (d1 + d2) * 0.28;
+            float brightness = clamp(glow + spikes * max(0.0, 0.92 - d * 1.4), 0.0, 1.0);
+            if (brightness < 0.007) discard;
+            vec3 col = mix(vec3(1.0, 0.97, 0.92), vColor, clamp(d * 3.0, 0.0, 1.0));
+            gl_FragColor = vec4(col * brightness, brightness);
         }
     `,
 
@@ -144,22 +179,42 @@ const Tab2 = {
         this.camera.lookAt(0, 0, 0);
 
         // ── 별 배경 ──────────────────────────────
-        const sc = 1800;
-        const sp = new Float32Array(sc*3), sv = new Float32Array(sc*3);
+        const sc = 3000;
+        const sp = new Float32Array(sc*3);
+        const sv = new Float32Array(sc*3);
+        const ss = new Float32Array(sc);
         for(let i=0;i<sc;i++){
             sp[i*3]   = (Math.random()-0.5)*200;
             sp[i*3+1] = (Math.random()-0.5)*150;
             sp[i*3+2] = (Math.random()-0.5)*200 - 30;
-            const b = 0.4+Math.random()*0.6;
-            sv[i*3]=b*0.85; sv[i*3+1]=b*0.90; sv[i*3+2]=b;
+            const rv = Math.random();
+            if      (rv < 0.72) ss[i] = 0.25 + Math.random() * 0.52;
+            else if (rv < 0.92) ss[i] = 0.70 + Math.random() * 1.1;
+            else                ss[i] = 1.8 + Math.random() * 2.0;
+
+            const ct = Math.random();
+            if (ct < 0.58) {
+                const b = 0.8 + Math.random() * 0.2;
+                sv[i*3]=b*0.90; sv[i*3+1]=b*0.95; sv[i*3+2]=b;
+            } else if (ct < 0.82) {
+                sv[i*3]=0.98; sv[i*3+1]=0.82+Math.random()*0.14; sv[i*3+2]=0.30+Math.random()*0.25;
+            } else {
+                sv[i*3]=1.0; sv[i*3+1]=0.50+Math.random()*0.2; sv[i*3+2]=0.15+Math.random()*0.2;
+            }
         }
         this._starGeo = new THREE.BufferGeometry();
         this._starGeo.setAttribute('position', new THREE.BufferAttribute(sp,3));
-        this._starGeo.setAttribute('color',    new THREE.BufferAttribute(sv,3));
-        this.scene.add(new THREE.Points(this._starGeo, new THREE.PointsMaterial({
-            size:0.06, vertexColors:true, transparent:true, opacity:0.6,
-            blending:THREE.AdditiveBlending, depthWrite:false
-        })));
+        this._starGeo.setAttribute('aColor',   new THREE.BufferAttribute(sv,3));
+        this._starGeo.setAttribute('aScale',   new THREE.BufferAttribute(ss,1));
+        this._starMat = new THREE.ShaderMaterial({
+            uniforms:       { uSize: { value: 1.85 } },
+            vertexShader:   this.STAR_VERT,
+            fragmentShader: this.STAR_FRAG,
+            transparent:    true,
+            blending:       THREE.AdditiveBlending,
+            depthWrite:     false
+        });
+        this.scene.add(new THREE.Points(this._starGeo, this._starMat));
 
         // ── 행성 본체 (수채화 표면 셰이더) ───────
         this._uni = {
@@ -229,7 +284,8 @@ const Tab2 = {
         if (this._planet)  { this._planet.geometry.dispose();  this._planet.material.dispose(); }
         if (this._atmMesh) { this._atmMesh.geometry.dispose(); this._atmMesh.material.dispose(); }
         if (this._starGeo) this._starGeo.dispose();
-        this._planet = this._atmMesh = this._starGeo = this._uni = null;
+        if (this._starMat) this._starMat.dispose();
+        this._planet = this._atmMesh = this._starGeo = this._starMat = this._uni = null;
         this.scene = this.camera = null;
     }
 };
