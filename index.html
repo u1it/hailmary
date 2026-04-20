@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HAIL MARY — 헤일메리</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=Noto+Serif+KR:wght@300&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- 로딩 화면 -->
+    <div id="loading-screen">
+        <div class="loading-inner">
+            <p class="loading-brand">HAIL MARY</p>
+            <div class="loading-track">
+                <div id="loading-fill"></div>
+            </div>
+            <p class="loading-sub">loading</p>
+        </div>
+    </div>
+
+    <canvas id="main-canvas"></canvas>
+
+    <nav id="nav">
+        <button class="nav-logo" id="btn-home">HAIL MARY</button>
+        <div class="nav-tabs">
+            <button class="tab-btn" data-tab="0">01</button>
+            <button class="tab-btn" data-tab="1">02</button>
+            <button class="tab-btn" data-tab="2">03</button>
+<!--            <button class="tab-btn" data-tab="3">04</button>-->
+        </div>
+    </nav>
+
+    <!-- 홈 -->
+    <div id="view-home" class="view-overlay active">
+        <div class="vt center">
+            <span class="eyebrow">Project Hail Mary</span>
+            <h1>HAIL MARY</h1>
+            <p class="ko">헤일메리</p>
+            <p class="enter-hint">탭을 선택해 경험을 시작하세요</p>
+        </div>
+    </div>
+
+    <!-- 01 아스트로파지 -->
+    <div id="view-tab0" class="view-overlay">
+        <div class="vt left">
+            <span class="num">01</span>
+            <h2>ASTROPHAGE</h2>
+            <p class="ko">아스트로파지</p>
+            <p class="hint">미생물이 태양을 먹는다</p>
+        </div>
+    </div>
+
+    <!-- 02 에리디언 -->
+    <div id="view-tab1" class="view-overlay">
+        <div class="vt left">
+            <span class="num">02</span>
+            <h2>ERIDIAN</h2>
+            <p class="ko">에리디언 행성</p>
+            <p class="hint">표면의 오로라를 건드려보세요</p>
+        </div>
+    </div>
+
+    <!-- 03 항성간 여행 -->
+    <div id="view-tab2" class="view-overlay">
+        <div class="vt right">
+            <span class="num">03</span>
+            <h2>TRANSIT</h2>
+            <p class="ko">항성간 항법</p>
+            <p class="hint">스크롤로 이동하세요</p>
+            <p id="transit-label" class="transit-label">Sol System</p>
+        </div>
+    </div>
+
+
+    <!-- CONTACT -->
+    <button id="contact-btn">CONTACT</button>
+    <div id="contact-panel">
+        <p class="contact-name">김윤호</p>
+        <a class="contact-item" href="mailto:hkj9909@gmail.com">hkj9909@gmail.com</a>
+        <a class="contact-item" href="tel:01025742209">010 · 2574 · 2209</a>
+    </div>
+
+    <div id="cursor-dot"></div>
+    <div id="cursor-ring"></div>
+
+    <script src="js/three.min.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/home.js"></script>
+    <script src="js/tab1.js"></script>
+    <script src="js/tab2.js"></script>
+    <script src="js/tab3.js"></script>
+<!--    <script src="js/tab4.js"></script>-->
+    <script src="js/app.js"></script>
+</body>
+</html>
