@@ -130,8 +130,11 @@ const Tab3 = {
             return      mix(c6,c7,(t-0.85)/0.15);
         }
         void main(){
-            vec2 rotUV = vec2(fract(vUv.x + uTime * 0.004), vUv.y);
-            vec2 p = (rotUV - 0.5) * 3.5;
+            vec3 nSurf = normalize(vWorldPos);
+            float lon = atan(nSurf.z, nSurf.x);
+            float lat = asin(clamp(nSurf.y, -1.0, 1.0));
+            vec2 cyc = vec2(cos(lon + uTime * 0.05), sin(lon + uTime * 0.05));
+            vec2 p = vec2(cyc.x * 2.05 + lat * 1.65, cyc.y * 2.05 - lat * 1.45);
             float t = uTime * 0.04;
             vec2 q = vec2(fbm(p+vec2(t,t*0.7)), fbm(p+vec2(3.2+t*0.9,1.7)));
             vec2 r = vec2(fbm(p+4.0*q+vec2(1.7+t*0.2,9.2+t*0.15)),
@@ -180,8 +183,11 @@ const Tab3 = {
             return      mix(c6,c7,(t-0.89)/0.11);
         }
         void main(){
-            vec2 rotUV = vec2(fract(vUv.x + uTime * 0.005), vUv.y);
-            vec2 p = (rotUV - 0.5) * 3.5;
+            vec3 nSurf = normalize(vWorldPos);
+            float lon = atan(nSurf.z, nSurf.x);
+            float lat = asin(clamp(nSurf.y, -1.0, 1.0));
+            vec2 cyc = vec2(cos(lon + uTime * 0.05), sin(lon + uTime * 0.05));
+            vec2 p = vec2(cyc.x * 2.1 + lat * 1.7, cyc.y * 2.1 - lat * 1.5);
             float t = uTime * 0.065;
             vec2 q = vec2(fbm(p+vec2(t,t*0.68)), fbm(p+vec2(3.18+t*0.88,1.74)));
             vec2 r = vec2(fbm(p+4.1*q+vec2(1.72+t*0.22,9.24+t*0.15)),
@@ -233,7 +239,7 @@ const Tab3 = {
         this.camera.position.set(0, 0, 14);
 
         // ── 별빛 셰이더 파티클 ────────────────────
-        const starCount = 4000;
+        const starCount = 5600;
         const sp  = new Float32Array(starCount * 3);
         const sc  = new Float32Array(starCount * 3);
         const sSc = new Float32Array(starCount);
@@ -245,9 +251,9 @@ const Tab3 = {
 
             // 크기: 대부분 작고, 일부 중간, 소수 크게
             const rv = Math.random();
-            if      (rv < 0.72) sSc[i] = 0.2 + Math.random() * 0.5;
-            else if (rv < 0.93) sSc[i] = 0.6 + Math.random() * 1.0;
-            else                sSc[i] = 1.6 + Math.random() * 2.2;
+            if      (rv < 0.66) sSc[i] = 0.25 + Math.random() * 0.65;
+            else if (rv < 0.90) sSc[i] = 0.85 + Math.random() * 1.35;
+            else                sSc[i] = 2.0 + Math.random() * 2.7;
 
             // 색상: 흰색/파란별/노란별/주황별
             const ct = Math.random();
@@ -274,7 +280,7 @@ const Tab3 = {
 
         this._starGeo = sGeo;
         this._starMat = new THREE.ShaderMaterial({
-            uniforms:       { uSize: { value: 1.3 } },
+            uniforms:       { uSize: { value: 1.9 } },
             vertexShader:   this.VERT,
             fragmentShader: this.FRAG,
             transparent:    true,
@@ -356,22 +362,22 @@ const Tab3 = {
             pp[i*3+1] = cy + (Math.random() - 0.5) * 0.16;
             pp[i*3+2] = cz + (Math.random() - 0.5) * 0.12;
 
-            const type = Math.random(); // Tab1 핑크/레드 팔레트 재사용
-            if (type < 0.44) {
-                pc[i*3] = 0.95 + Math.random()*0.05; pc[i*3+1] = 0.07+Math.random()*0.18; pc[i*3+2] = 0.40+Math.random()*0.35;
-            } else if (type < 0.76) {
-                pc[i*3] = 0.88 + Math.random()*0.12; pc[i*3+1] = 0.02+Math.random()*0.08; pc[i*3+2] = 0.04+Math.random()*0.08;
+            const type = Math.random(); // 핑크/레드 중심으로 강화
+            if (type < 0.52) {
+                pc[i*3] = 0.98 + Math.random()*0.02; pc[i*3+1] = 0.05+Math.random()*0.10; pc[i*3+2] = 0.50+Math.random()*0.35;
+            } else if (type < 0.88) {
+                pc[i*3] = 0.95 + Math.random()*0.05; pc[i*3+1] = 0.01+Math.random()*0.05; pc[i*3+2] = 0.20+Math.random()*0.15;
             } else {
-                pc[i*3] = 0.98; pc[i*3+1] = 0.22+Math.random()*0.22; pc[i*3+2] = 0.02+Math.random()*0.06;
+                pc[i*3] = 1.00; pc[i*3+1] = 0.10+Math.random()*0.10; pc[i*3+2] = 0.40+Math.random()*0.18;
             }
-            ps[i] = 0.55 + Math.random() * 0.95;
+            ps[i] = 0.80 + Math.random() * 1.35;
         }
         this._petroGeo = new THREE.BufferGeometry();
         this._petroGeo.setAttribute('position', new THREE.BufferAttribute(pp, 3));
         this._petroGeo.setAttribute('aColor',   new THREE.BufferAttribute(pc, 3));
         this._petroGeo.setAttribute('aScale',   new THREE.BufferAttribute(ps, 1));
         this._petroMat = new THREE.ShaderMaterial({
-            uniforms:       { uSize: { value: 1.7 } },
+            uniforms:       { uSize: { value: 2.35 } },
             vertexShader:   this.VERT,
             fragmentShader: this.FRAG,
             transparent:    true,
