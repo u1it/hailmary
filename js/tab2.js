@@ -71,7 +71,7 @@ const Tab2 = {
             vec3 nSurf = normalize(vWorldPos);
             float lon = atan(nSurf.z, nSurf.x);
             float lat = asin(clamp(nSurf.y, -1.0, 1.0));
-            vec2 cyc = vec2(cos(lon + uTime * 0.42), sin(lon + uTime * 0.42));
+            vec2 cyc = vec2(cos(lon + uTime * 0.05), sin(lon + uTime * 0.05));
             vec2 p = vec2(cyc.x * 2.1 + lat * 1.7, cyc.y * 2.1 - lat * 1.5);
             float t = uTime * 0.065;
 

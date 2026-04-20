@@ -212,7 +212,7 @@ const Tab1 = {
                 })
             ));
         });
-        this._sun.position.set(9999, 9999, 0);
+        this._sun.position.set(this._mwx, this._mwy, 0);
         this.scene.add(this._sun);
     },
 
