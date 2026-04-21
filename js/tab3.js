@@ -51,6 +51,18 @@ const Tab3 = {
             gl_FragColor=vec4(mix(vec3(1.0,0.97,0.92),vColor,clamp(d*3.0,0.0,1.0))*b,b);
         }
     `,
+    PETRO_FRAG: `
+        varying vec3 vColor;
+        void main(){
+            vec2 uv = gl_PointCoord - vec2(0.5);
+            float d = length(uv);
+            if (d > 0.5) discard;
+            float a = smoothstep(0.5, 0.0, d);
+            a = a * a * 0.65;
+            if (a < 0.01) discard;
+            gl_FragColor = vec4(vColor * (0.7 + a * 0.3), a);
+        }
+    `,
 
     // ── 항성 표면 셰이더 (Sol / TauCeti / 40EridaniA/B/C 공용) ─
     STAR_SURF_VERT: `
@@ -315,79 +327,6 @@ const Tab3 = {
         }
     `,
 
-    // ── 대기권 셰이더 ────────────────────────────────
-    ATM_VERT: `
-        varying vec3 vNormal; varying vec3 vWorldPos;
-        void main(){
-            vNormal   = normalize(normalMatrix*normal);
-            vWorldPos = (modelMatrix*vec4(position,1.0)).xyz;
-            gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);
-        }
-    `,
-    // 지구 — 레일리 산란 파란 대기
-    EARTH_ATM_FRAG: `
-        float hash(vec2 p){return fract(sin(dot(p,vec2(91.7,129.3)))*43758.5453123);}
-        float noise(vec2 p){
-            vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
-            return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);
-        }
-        varying vec3 vNormal; varying vec3 vWorldPos;
-        void main(){
-            vec3 n=normalize(vNormal);
-            vec3 vd=normalize(cameraPosition-vWorldPos);
-            float fr=1.0-max(dot(vd,n),0.0);
-            float lon=atan(n.z,n.x),lat=asin(clamp(n.y,-1.,1.));
-            float haze=noise(vec2(lon*2.5,lat*6.0))*0.12;
-            float layer1=pow(fr,2.0)*(0.82+haze);
-            float layer2=pow(fr,4.1)*0.48;
-            vec3 col=mix(vec3(0.08,0.34,0.88),vec3(0.33,0.70,1.00),smoothstep(0.35,1.0,fr));
-            col*=(layer1+layer2);
-            gl_FragColor=vec4(col, clamp(layer1*0.18+layer2*0.24,0.0,0.38));
-        }
-    `,
-    // Adrian — 고온·고압·타우메바 서식 금성형 두꺼운 대기
-    ADRIAN_ATM_FRAG: `
-        float hash(vec2 p){return fract(sin(dot(p,vec2(71.9,201.1)))*43758.5453123);}
-        float noise(vec2 p){
-            vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
-            return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);
-        }
-        varying vec3 vNormal; varying vec3 vWorldPos;
-        void main(){
-            vec3 n=normalize(vNormal);
-            vec3 vd=normalize(cameraPosition-vWorldPos);
-            float fr=1.0-max(dot(vd,n),0.0);
-            float lon=atan(n.z,n.x),lat=asin(clamp(n.y,-1.,1.));
-            float swirl=noise(vec2(lon*3.2,lat*8.2))*0.22;
-            float layer1=pow(fr,1.7)*(0.56+swirl);
-            float layer2=pow(fr,3.2)*(0.52+swirl*0.45);
-            vec3 col=mix(vec3(0.62,0.34,0.08),vec3(0.98,0.71,0.23),smoothstep(0.25,1.0,fr+swirl*0.2));
-            col*=(layer1+layer2);
-            gl_FragColor=vec4(col, clamp(layer1*0.16+layer2*0.22,0.0,0.36));
-        }
-    `,
-    // Erid — 암모니아 기반 극고압 청록 대기
-    ERID_ATM_FRAG: `
-        float hash(vec2 p){return fract(sin(dot(p,vec2(119.9,77.3)))*43758.5453123);}
-        float noise(vec2 p){
-            vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
-            return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);
-        }
-        varying vec3 vNormal; varying vec3 vWorldPos;
-        void main(){
-            vec3 n=normalize(vNormal);
-            vec3 vd=normalize(cameraPosition-vWorldPos);
-            float fr=1.0-max(dot(vd,n),0.0);
-            float lon=atan(n.z,n.x),lat=asin(clamp(n.y,-1.,1.));
-            float turb=noise(vec2(lon*4.0,lat*6.8))*0.18;
-            float layer1=pow(fr,1.9)*(0.64+turb);
-            float layer2=pow(fr,3.6)*(0.42+turb*0.45);
-            vec3 col=mix(vec3(0.07,0.22,0.32),vec3(0.19,0.47,0.56),smoothstep(0.32,1.0,fr+turb*0.2));
-            col*=(layer1+layer2);
-            gl_FragColor=vec4(col, clamp(layer1*0.14+layer2*0.20,0.0,0.34));
-        }
-    `,
-
     // Solar → Tau Ceti → 40 Eridani (삼중성계)
     BODIES: [
         { type:'star',   name:'Sol',      r:2.20, glow:0xff8800,
@@ -440,16 +379,6 @@ const Tab3 = {
             new THREE.MeshBasicMaterial({
                 color, transparent:true, opacity,
                 blending:THREE.AdditiveBlending, depthWrite:false
-            })
-        );
-    },
-    _makeAtmosphere(r, fragShader) {
-        return new THREE.Mesh(
-            new THREE.SphereGeometry(r, 32, 32),
-            new THREE.ShaderMaterial({
-                vertexShader:this.ATM_VERT, fragmentShader:fragShader,
-                transparent:true, blending:THREE.AdditiveBlending,
-                depthWrite:false, side:THREE.BackSide
             })
         );
     },
@@ -598,7 +527,7 @@ const Tab3 = {
         this._petroGeo.setAttribute('aScale',  new THREE.BufferAttribute(ps,1));
         this._petroMat=new THREE.ShaderMaterial({
             uniforms:{uSize:{value:2.4}},
-            vertexShader:this.STAR_VERT,fragmentShader:this.STAR_FRAG,
+            vertexShader:this.STAR_VERT,fragmentShader:this.PETRO_FRAG,
             transparent:true,blending:THREE.AdditiveBlending,depthWrite:false
         });
         this.scene.add(new THREE.Points(this._petroGeo,this._petroMat));
@@ -607,13 +536,13 @@ const Tab3 = {
         this._objects=[]; this._planetUnis=[];
         this.BODIES.filter(b=>b.type==='planet').forEach(b=>{
             let uni={uTime:{value:0}};
-            let frag=null, atmFrag=null;
+            let frag=null;
             if(b.kind==='earth'){
-                frag=this.EARTH_FRAG; atmFrag=this.EARTH_ATM_FRAG;
+                frag=this.EARTH_FRAG;
             } else if(b.kind==='adrian'){
-                frag=this.ADRIAN_FRAG; atmFrag=this.ADRIAN_ATM_FRAG;
+                frag=this.ADRIAN_FRAG;
             } else if(b.kind==='erid') {
-                frag=this.ERID_FRAG;   atmFrag=this.ERID_ATM_FRAG;
+                frag=this.ERID_FRAG;
             } else {
                 frag=this.PLANET_GENERIC_FRAG;
                 uni=this._makeGenericPlanetUniforms(b.kind, b.color);
@@ -625,7 +554,6 @@ const Tab3 = {
                 new THREE.SphereGeometry(b.r,64,64),
                 new THREE.ShaderMaterial({uniforms:uni,vertexShader:this.PLANET_VERT,fragmentShader:frag})
             ));
-            if (atmFrag) g.add(this._makeAtmosphere(b.r*1.20, atmFrag));
             g.add(this._makeGlow(b.r*2.8, b.glow, 0.045));
             this.scene.add(g);
             this._objects.push({group:g, rot:b.rot || 0.1, kind:b.kind});
