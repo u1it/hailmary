@@ -18,6 +18,7 @@ const Tab3 = {
     _onTouchStart: null,
     _onTouchMove:  null,
     _onTouchEnd:   null,
+    _pinchDist: 0,
     _touchY:  0,
     _label:   null,
     // 마우스 시선 제어
@@ -654,20 +655,30 @@ const Tab3 = {
         this._onWheel=e=>{this._scrollT=clamp(this._scrollT+e.deltaY*0.0005,0,1);};
         window.addEventListener('wheel',this._onWheel,{passive:true});
         this._touchY=0;
+        this._pinchDist=0;
         this._isDragging=false;
         this._onTouchStart=e=>{
             const t=e.touches[0];
             this._touchY=t.clientY;
             this._prevMX=t.clientX;
             this._prevMY=t.clientY;
+            if (e.touches.length > 1) {
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                this._pinchDist = Math.sqrt(dx*dx + dy*dy);
+            }
             this._isDragging=true;
         };
         this._onTouchMove=e=>{
             if (!e.touches.length) return;
             if (e.touches.length > 1) {
-                const dy=this._touchY-e.touches[0].clientY;
-                this._touchY=e.touches[0].clientY;
-                this._scrollT=clamp(this._scrollT+dy*0.003,0,1);
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                const d = Math.sqrt(dx*dx + dy*dy);
+                const dd = d - this._pinchDist;
+                this._pinchDist = d;
+                // 모바일 스크롤 대체: 핀치 줌으로 이동
+                this._scrollT=clamp(this._scrollT-dd*0.0018,0,1);
                 return;
             }
             const t=e.touches[0];
@@ -676,7 +687,7 @@ const Tab3 = {
             this._lookHT=clamp(this._lookHT-dx*0.006,-1.6,1.6);
             this._lookVT=clamp(this._lookVT+dy*0.0045,-0.9,0.9);
         };
-        this._onTouchEnd=()=>{this._isDragging=false;};
+        this._onTouchEnd=()=>{this._isDragging=false; this._pinchDist=0;};
         window.addEventListener('touchstart',this._onTouchStart,{passive:true});
         window.addEventListener('touchmove', this._onTouchMove, {passive:true});
         window.addEventListener('touchend', this._onTouchEnd, {passive:true});
