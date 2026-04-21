@@ -156,8 +156,15 @@ h2 {
     font-family: 'Cormorant Garamond', serif;
     font-size: 0.75rem;
     letter-spacing: 0.25em;
-    color: var(--dim);
+    color: rgba(255, 255, 255, 0.72);
     margin-top: 1.5rem;
+    text-shadow: 0 0 14px rgba(0, 0, 0, 0.9), 0 1px 3px rgba(0, 0, 0, 0.7);
+    transition: opacity 2.0s ease;
+    opacity: 1;
+}
+.hint.hint-hidden {
+    opacity: 0;
+    transition: opacity 0.65s ease;
 }
 .hint-mobile { display: none; }
 

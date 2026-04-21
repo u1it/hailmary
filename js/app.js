@@ -41,6 +41,27 @@
     let cursorRX = window.innerWidth / 2, cursorRY = window.innerHeight / 2;
     mouse.sx = cursorRX; mouse.sy = cursorRY;
 
+    // ─── 힌트 자동 숨김 ──────────────────────
+    const allHints = document.querySelectorAll('.hint');
+    let hintTimer  = null;
+
+    function showHints() {
+        allHints.forEach(h => h.classList.remove('hint-hidden'));
+    }
+    function hideHints() {
+        allHints.forEach(h => h.classList.add('hint-hidden'));
+    }
+    function onUserAction() {
+        hideHints();
+        clearTimeout(hintTimer);
+        hintTimer = setTimeout(showHints, 3000);
+    }
+
+    document.addEventListener('mousemove',  onUserAction);
+    document.addEventListener('wheel',      onUserAction, { passive: true });
+    document.addEventListener('touchstart', onUserAction, { passive: true });
+    document.addEventListener('touchmove',  onUserAction, { passive: true });
+
     // ─── 탭 전환 ──────────────────────────────
     function switchTo(module, overlayId) {
         if (current && current.dispose) current.dispose();
@@ -51,6 +72,10 @@
         document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
         const idx = MODULES.indexOf(module);
         if (idx >= 0) document.querySelectorAll('.tab-btn')[idx].classList.add('active');
+
+        // 탭 전환 시 힌트 초기화
+        clearTimeout(hintTimer);
+        showHints();
 
         current = module;
         current.init(renderer, window.innerWidth, window.innerHeight);
