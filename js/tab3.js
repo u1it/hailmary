@@ -17,13 +17,17 @@ const Tab3 = {
     _onWheel:      null,
     _onTouchStart: null,
     _onTouchMove:  null,
+    _onTouchEnd:   null,
     _touchY:  0,
     _label:   null,
     // 마우스 시선 제어
     _lookH: 0, _lookV: 0,
     _lookHT: 0, _lookVT: 0,
-    _mouseNX: 0, _mouseNY: 0,
-    _onMouseLook: null,
+    _isDragging: false,
+    _prevMX: 0, _prevMY: 0,
+    _onMouseDown: null,
+    _onMouseUp: null,
+    _onMouseMoveDrag: null,
 
     // ── 배경별 파티클 셰이더 ──────────────────────
     STAR_VERT: `
@@ -111,6 +115,46 @@ const Tab3 = {
             vNormal   = normalize(normalMatrix*normal);
             vWorldPos = (modelMatrix*vec4(position,1.0)).xyz;
             gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);
+        }
+    `,
+    PLANET_GENERIC_FRAG: `
+        uniform float uTime;
+        uniform vec3 uColorA;
+        uniform vec3 uColorB;
+        uniform vec3 uColorC;
+        uniform float uBanding;
+        uniform float uRough;
+        varying vec3 vWorldPos; varying vec3 vNormal;
+        float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);}
+        float noise(vec2 p){
+            vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+            return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);
+        }
+        float fbm(vec2 p){
+            float v=0.0,a=0.5;
+            for(int i=0;i<5;i++){v+=a*noise(p);p=p*2.07+vec2(1.2,3.7);a*=0.5;}
+            return v;
+        }
+        void main(){
+            vec3 n=normalize(vNormal);
+            float lon=atan(n.z,n.x), lat=asin(clamp(n.y,-1.,1.));
+            vec2 p=vec2(cos(lon+uTime*0.02), sin(lon+uTime*0.02))*2.2+vec2(lat*1.7,-lat*1.4);
+            float n1=fbm(p*2.5+uTime*0.03);
+            float n2=fbm(p*5.4-uTime*0.04);
+            float bands=0.5+0.5*sin(lat*uBanding + n1*3.2);
+            float h=clamp(n1*0.65+n2*0.25+bands*0.35,0.0,1.0);
+            vec3 col=mix(uColorA,uColorB,smoothstep(0.18,0.62,h));
+            col=mix(col,uColorC,smoothstep(0.62,0.96,h));
+            vec3 lightDir=normalize(vec3(-3.2,1.2,6.0));
+            float diff=clamp(dot(n,lightDir),0.0,1.0);
+            vec3 viewDir=normalize(cameraPosition-vWorldPos);
+            vec3 halfVec=normalize(lightDir+viewDir);
+            float spec=pow(max(dot(n,halfVec),0.0),mix(12.0,48.0,uRough))*mix(0.12,0.42,1.0-uRough);
+            col*=0.12+0.88*diff;
+            col+=vec3(0.8,0.9,1.0)*spec*diff;
+            float rim=pow(1.0-clamp(dot(viewDir,n),0.0,1.0),2.7);
+            col+=uColorC*rim*0.14;
+            gl_FragColor=vec4(col,1.0);
         }
     `,
 
@@ -291,41 +335,65 @@ const Tab3 = {
     `,
     // 지구 — 레일리 산란 파란 대기
     EARTH_ATM_FRAG: `
+        float hash(vec2 p){return fract(sin(dot(p,vec2(91.7,129.3)))*43758.5453123);}
+        float noise(vec2 p){
+            vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+            return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);
+        }
         varying vec3 vNormal; varying vec3 vWorldPos;
         void main(){
+            vec3 n=normalize(vNormal);
             vec3 vd=normalize(cameraPosition-vWorldPos);
-            float fr=1.0-abs(dot(vd,vNormal));
-            float layer1=pow(fr,2.8)*1.5;
-            float layer2=pow(fr,1.35)*0.38;
-            vec3 col=mix(vec3(0.10,0.38,0.95),vec3(0.28,0.65,1.00),smoothstep(0.5,1.0,fr));
+            float fr=1.0-max(dot(vd,n),0.0);
+            float lon=atan(n.z,n.x),lat=asin(clamp(n.y,-1.,1.));
+            float haze=noise(vec2(lon*2.5,lat*6.0))*0.16;
+            float layer1=pow(fr,2.4)*(1.2+haze);
+            float layer2=pow(fr,4.8)*0.92;
+            vec3 col=mix(vec3(0.08,0.34,0.88),vec3(0.33,0.70,1.00),smoothstep(0.35,1.0,fr));
             col*=(layer1+layer2);
-            gl_FragColor=vec4(col, clamp(layer1*0.62+layer2*0.20,0.0,0.90));
+            gl_FragColor=vec4(col, clamp(layer1*0.34+layer2*0.48,0.0,0.78));
         }
     `,
     // Adrian — 고온·고압·타우메바 서식 금성형 두꺼운 대기
     ADRIAN_ATM_FRAG: `
+        float hash(vec2 p){return fract(sin(dot(p,vec2(71.9,201.1)))*43758.5453123);}
+        float noise(vec2 p){
+            vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+            return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);
+        }
         varying vec3 vNormal; varying vec3 vWorldPos;
         void main(){
+            vec3 n=normalize(vNormal);
             vec3 vd=normalize(cameraPosition-vWorldPos);
-            float fr=1.0-abs(dot(vd,vNormal));
-            float layer1=pow(fr,2.5)*1.4;
-            float layer2=pow(fr,1.15)*0.52;
-            vec3 col=mix(vec3(0.85,0.52,0.12),vec3(1.00,0.78,0.28),smoothstep(0.4,1.0,fr));
+            float fr=1.0-max(dot(vd,n),0.0);
+            float lon=atan(n.z,n.x),lat=asin(clamp(n.y,-1.,1.));
+            float swirl=noise(vec2(lon*3.2,lat*8.2))*0.32;
+            float layer1=pow(fr,1.9)*(0.8+swirl);
+            float layer2=pow(fr,3.7)*(0.9+swirl*0.6);
+            vec3 col=mix(vec3(0.62,0.34,0.08),vec3(0.98,0.71,0.23),smoothstep(0.25,1.0,fr+swirl*0.2));
             col*=(layer1+layer2);
-            gl_FragColor=vec4(col, clamp(layer1*0.68+layer2*0.30,0.0,0.95));
+            gl_FragColor=vec4(col, clamp(layer1*0.28+layer2*0.46,0.0,0.80));
         }
     `,
     // Erid — 암모니아 기반 극고압 청록 대기
     ERID_ATM_FRAG: `
+        float hash(vec2 p){return fract(sin(dot(p,vec2(119.9,77.3)))*43758.5453123);}
+        float noise(vec2 p){
+            vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+            return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);
+        }
         varying vec3 vNormal; varying vec3 vWorldPos;
         void main(){
+            vec3 n=normalize(vNormal);
             vec3 vd=normalize(cameraPosition-vWorldPos);
-            float fr=1.0-abs(dot(vd,vNormal));
-            float layer1=pow(fr,2.6)*1.6;
-            float layer2=pow(fr,1.25)*0.46;
-            vec3 col=mix(vec3(0.10,0.28,0.40),vec3(0.20,0.48,0.55),smoothstep(0.4,1.0,fr));
+            float fr=1.0-max(dot(vd,n),0.0);
+            float lon=atan(n.z,n.x),lat=asin(clamp(n.y,-1.,1.));
+            float turb=noise(vec2(lon*4.0,lat*6.8))*0.24;
+            float layer1=pow(fr,2.2)*(0.95+turb);
+            float layer2=pow(fr,4.1)*(0.70+turb*0.7);
+            vec3 col=mix(vec3(0.07,0.22,0.32),vec3(0.19,0.47,0.56),smoothstep(0.32,1.0,fr+turb*0.2));
             col*=(layer1+layer2);
-            gl_FragColor=vec4(col, clamp(layer1*0.72+layer2*0.32,0.0,0.95));
+            gl_FragColor=vec4(col, clamp(layer1*0.26+layer2*0.42,0.0,0.74));
         }
     `,
 
@@ -394,6 +462,24 @@ const Tab3 = {
             })
         );
     },
+    _makeGenericPlanetUniforms(kind, colorHex) {
+        const c = new THREE.Color(colorHex || 0x888888);
+        const a = c.clone().multiplyScalar(0.55);
+        const b = c.clone().multiplyScalar(0.95);
+        const d = c.clone().lerp(new THREE.Color(0xffffff), 0.35);
+        let banding = 4.5;
+        let rough = 0.72;
+        if (kind === 'gas') { banding = 16.0; rough = 0.45; }
+        else if (kind === 'ice') { banding = 9.0; rough = 0.28; }
+        return {
+            uTime:{value:0},
+            uColorA:{value:new THREE.Vector3(a.r,a.g,a.b)},
+            uColorB:{value:new THREE.Vector3(b.r,b.g,b.b)},
+            uColorC:{value:new THREE.Vector3(d.r,d.g,d.b)},
+            uBanding:{value:banding},
+            uRough:{value:rough}
+        };
+    },
     _makeStar(r, core, mid, rim, g1, g2) {
         const uni = {
             uTime: {value:0},
@@ -426,7 +512,6 @@ const Tab3 = {
 
         // 시선 상태 초기화
         this._lookH = this._lookV = this._lookHT = this._lookVT = 0;
-        this._mouseNX = this._mouseNY = 0;
 
         // ── 배경별 파티클 ────────────────────────────
         const SC=6000;
@@ -493,29 +578,22 @@ const Tab3 = {
             this._starUnis.push(uni);
         });
 
-        // ── Petrova Line: Sol → TauCeti → 40EridaniA ─
-        // Adrian(z≈-69.5) 부근 극도로 희미 (타우메바가 아스트로파지 소비)
+        // ── Petrova Flow: 성간 물질 흐름 (항성-항성 직결 아님) ─
+        // 항성 자체를 연결하지 않고 성간 공간을 따라 퍼지는 흐름으로 표현
         const PC=3200;
         const pp=new Float32Array(PC*3),pc=new Float32Array(PC*3),ps=new Float32Array(PC);
-        const pSol  ={x:0.0,y:0.0,z:0.0};
-        const pTauC ={x:-1.8,y:1.2,z:-62.0};
-        const p40E  ={x:-2.1,y:1.4,z:-108.0};
-        const FADE_Z=-69.5, FADE_R=6.0;
+        const p0 ={x: 1.4, y:-0.8, z:-12.0};
+        const p1 ={x:-4.0, y: 1.9, z:-44.0};
+        const p2 ={x: 2.8, y:-1.4, z:-83.0};
+        const p3 ={x:-5.2, y: 1.0, z:-121.0};
+        const FADE_Z=-69.5, FADE_R=10.0;
         const ssFade=x=>{const t=Math.max(0,Math.min(1,Math.abs(x-FADE_Z)/FADE_R));return t*t*(3-2*t);};
         for(let i=0;i<PC;i++){
             const u=i/(PC-1);
-            let cx,cy,cz;
-            if(u<0.52){
-                const v=u/0.52;
-                cx=lerp(pSol.x,pTauC.x,v)+Math.sin(v*Math.PI*7.5)*0.30;
-                cy=lerp(pSol.y,pTauC.y,v)+Math.sin(v*Math.PI*4.8)*0.20;
-                cz=lerp(pSol.z,pTauC.z,v);
-            } else {
-                const v=(u-0.52)/0.48;
-                cx=lerp(pTauC.x,p40E.x,v)+Math.sin(v*Math.PI*6.2+2.1)*0.28;
-                cy=lerp(pTauC.y,p40E.y,v)+Math.sin(v*Math.PI*4.0+1.3)*0.18;
-                cz=lerp(pTauC.z,p40E.z,v);
-            }
+            const omt=1.0-u;
+            const cx = omt*omt*omt*p0.x + 3.0*omt*omt*u*p1.x + 3.0*omt*u*u*p2.x + u*u*u*p3.x;
+            const cy = omt*omt*omt*p0.y + 3.0*omt*omt*u*p1.y + 3.0*omt*u*u*p2.y + u*u*u*p3.y;
+            const cz = omt*omt*omt*p0.z + 3.0*omt*omt*u*p1.z + 3.0*omt*u*u*p2.z + u*u*u*p3.z;
             pp[i*3]=cx+(Math.random()-0.5)*0.14;
             pp[i*3+1]=cy+(Math.random()-0.5)*0.14;
             pp[i*3+2]=cz+(Math.random()-0.5)*0.10;
@@ -540,7 +618,7 @@ const Tab3 = {
         // ── 행성 구체 ────────────────────────────────
         this._objects=[]; this._planetUnis=[];
         this.BODIES.filter(b=>b.type==='planet').forEach(b=>{
-            const uni={uTime:{value:0}};
+            let uni={uTime:{value:0}};
             let frag=null, atmFrag=null;
             if(b.kind==='earth'){
                 frag=this.EARTH_FRAG; atmFrag=this.EARTH_ATM_FRAG;
@@ -548,23 +626,18 @@ const Tab3 = {
                 frag=this.ADRIAN_FRAG; atmFrag=this.ADRIAN_ATM_FRAG;
             } else if(b.kind==='erid') {
                 frag=this.ERID_FRAG;   atmFrag=this.ERID_ATM_FRAG;
+            } else {
+                frag=this.PLANET_GENERIC_FRAG;
+                uni=this._makeGenericPlanetUniforms(b.kind, b.color);
             }
             const g=new THREE.Group();
             g.position.set(...b.pos);
-            if (frag) {
-                this._planetUnis.push(uni);
-                g.add(new THREE.Mesh(
-                    new THREE.SphereGeometry(b.r,64,64),
-                    new THREE.ShaderMaterial({uniforms:uni,vertexShader:this.PLANET_VERT,fragmentShader:frag})
-                ));
-                g.add(this._makeAtmosphere(b.r*1.20, atmFrag));
-            } else {
-                const shininess = b.kind==='gas' ? 8 : (b.kind==='ice' ? 30 : 14);
-                g.add(new THREE.Mesh(
-                    new THREE.SphereGeometry(b.r,48,48),
-                    new THREE.MeshPhongMaterial({ color:b.color, emissive:b.color, emissiveIntensity:0.08, shininess })
-                ));
-            }
+            this._planetUnis.push(uni);
+            g.add(new THREE.Mesh(
+                new THREE.SphereGeometry(b.r,64,64),
+                new THREE.ShaderMaterial({uniforms:uni,vertexShader:this.PLANET_VERT,fragmentShader:frag})
+            ));
+            if (atmFrag) g.add(this._makeAtmosphere(b.r*1.20, atmFrag));
             g.add(this._makeGlow(b.r*2.8, b.glow, 0.045));
             this.scene.add(g);
             this._objects.push({group:g, rot:b.rot || 0.1, kind:b.kind});
@@ -581,22 +654,51 @@ const Tab3 = {
         this._onWheel=e=>{this._scrollT=clamp(this._scrollT+e.deltaY*0.0005,0,1);};
         window.addEventListener('wheel',this._onWheel,{passive:true});
         this._touchY=0;
-        this._onTouchStart=e=>{this._touchY=e.touches[0].clientY;};
-        this._onTouchMove=e=>{
-            const dy=this._touchY-e.touches[0].clientY;
-            this._touchY=e.touches[0].clientY;
-            this._scrollT=clamp(this._scrollT+dy*0.003,0,1);
+        this._isDragging=false;
+        this._onTouchStart=e=>{
+            const t=e.touches[0];
+            this._touchY=t.clientY;
+            this._prevMX=t.clientX;
+            this._prevMY=t.clientY;
+            this._isDragging=true;
         };
+        this._onTouchMove=e=>{
+            if (!e.touches.length) return;
+            if (e.touches.length > 1) {
+                const dy=this._touchY-e.touches[0].clientY;
+                this._touchY=e.touches[0].clientY;
+                this._scrollT=clamp(this._scrollT+dy*0.003,0,1);
+                return;
+            }
+            const t=e.touches[0];
+            const dx=t.clientX-this._prevMX, dy=t.clientY-this._prevMY;
+            this._prevMX=t.clientX; this._prevMY=t.clientY;
+            this._lookHT=clamp(this._lookHT-dx*0.006,-1.6,1.6);
+            this._lookVT=clamp(this._lookVT+dy*0.0045,-0.9,0.9);
+        };
+        this._onTouchEnd=()=>{this._isDragging=false;};
         window.addEventListener('touchstart',this._onTouchStart,{passive:true});
         window.addEventListener('touchmove', this._onTouchMove, {passive:true});
+        window.addEventListener('touchend', this._onTouchEnd, {passive:true});
 
-        // ── 마우스 시선 제어 ──────────────────────────
-        // 스크롤은 이동, 마우스는 상시 시선 제어
-        this._onMouseLook=e=>{
-            this._mouseNX = (e.clientX / window.innerWidth) * 2 - 1;
-            this._mouseNY = (e.clientY / window.innerHeight) * 2 - 1;
+        // ── 마우스 시선 제어 (클릭 드래그) ─────────────
+        this._onMouseDown=e=>{
+            if (e.button !== 0) return;
+            this._isDragging=true;
+            this._prevMX=e.clientX;
+            this._prevMY=e.clientY;
         };
-        window.addEventListener('mousemove', this._onMouseLook);
+        this._onMouseMoveDrag=e=>{
+            if(!this._isDragging) return;
+            const dx=e.clientX-this._prevMX, dy=e.clientY-this._prevMY;
+            this._prevMX=e.clientX; this._prevMY=e.clientY;
+            this._lookHT=clamp(this._lookHT-dx*0.006,-1.6,1.6);
+            this._lookVT=clamp(this._lookVT+dy*0.0045,-0.9,0.9);
+        };
+        this._onMouseUp=()=>{this._isDragging=false;};
+        window.addEventListener('mousedown', this._onMouseDown);
+        window.addEventListener('mousemove', this._onMouseMoveDrag);
+        window.addEventListener('mouseup', this._onMouseUp);
     },
 
     _getLabel(t){
@@ -616,10 +718,7 @@ const Tab3 = {
         this.camera.position.x=Math.sin(s*Math.PI*2.8)*2.5 + Math.sin(s*Math.PI*8.0)*0.4;
         this.camera.position.y=Math.sin(s*Math.PI*1.7)*1.6;
 
-        this._lookHT = this._mouseNX * 0.9;
-        this._lookVT = -this._mouseNY * 0.45;
-
-        // 시선 보간 (마우스/터치)
+        // 시선 보간 (드래그)
         this._lookH=lerp(this._lookH,this._lookHT,0.08);
         this._lookV=lerp(this._lookV,this._lookVT,0.08);
 
@@ -647,10 +746,7 @@ const Tab3 = {
         if(this._label) this._label.textContent=this._getLabel(s);
     },
 
-    onMouseMove(nx, ny){
-        this._mouseNX = nx || 0;
-        this._mouseNY = -(ny || 0);
-    },
+    onMouseMove(){},
 
     resize(W,H){
         if(!this.camera) return;
@@ -662,7 +758,10 @@ const Tab3 = {
         if(this._onWheel)      window.removeEventListener('wheel',      this._onWheel);
         if(this._onTouchStart) window.removeEventListener('touchstart', this._onTouchStart);
         if(this._onTouchMove)  window.removeEventListener('touchmove',  this._onTouchMove);
-        if(this._onMouseLook)  window.removeEventListener('mousemove',  this._onMouseLook);
+        if(this._onTouchEnd)   window.removeEventListener('touchend',   this._onTouchEnd);
+        if(this._onMouseDown)  window.removeEventListener('mousedown',  this._onMouseDown);
+        if(this._onMouseMoveDrag) window.removeEventListener('mousemove', this._onMouseMoveDrag);
+        if(this._onMouseUp)    window.removeEventListener('mouseup',    this._onMouseUp);
 
         this._objects.forEach(({group})=>{
             group.children.forEach(c=>{c.geometry.dispose();c.material.dispose();});
