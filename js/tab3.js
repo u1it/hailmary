@@ -18,18 +18,8 @@ const Tab3 = {
     _onTouchStart: null,
     _onTouchMove:  null,
     _onTouchEnd:   null,
-    _pinchDist: 0,
     _touchY:  0,
     _label:   null,
-    // 마우스 시선 제어
-    _lookH: 0, _lookV: 0,
-    _lookHT: 0, _lookVT: 0,
-    _isDragging: false,
-    _prevMX: 0, _prevMY: 0,
-    _onMouseDown: null,
-    _onMouseUp: null,
-    _onMouseMoveDrag: null,
-
     // ── 배경별 파티클 셰이더 ──────────────────────
     STAR_VERT: `
         uniform  float uSize;
@@ -347,12 +337,12 @@ const Tab3 = {
             vec3 vd=normalize(cameraPosition-vWorldPos);
             float fr=1.0-max(dot(vd,n),0.0);
             float lon=atan(n.z,n.x),lat=asin(clamp(n.y,-1.,1.));
-            float haze=noise(vec2(lon*2.5,lat*6.0))*0.16;
-            float layer1=pow(fr,2.4)*(1.2+haze);
-            float layer2=pow(fr,4.8)*0.92;
+            float haze=noise(vec2(lon*2.5,lat*6.0))*0.12;
+            float layer1=pow(fr,2.0)*(0.82+haze);
+            float layer2=pow(fr,4.1)*0.48;
             vec3 col=mix(vec3(0.08,0.34,0.88),vec3(0.33,0.70,1.00),smoothstep(0.35,1.0,fr));
             col*=(layer1+layer2);
-            gl_FragColor=vec4(col, clamp(layer1*0.34+layer2*0.48,0.0,0.78));
+            gl_FragColor=vec4(col, clamp(layer1*0.18+layer2*0.24,0.0,0.38));
         }
     `,
     // Adrian — 고온·고압·타우메바 서식 금성형 두꺼운 대기
@@ -368,12 +358,12 @@ const Tab3 = {
             vec3 vd=normalize(cameraPosition-vWorldPos);
             float fr=1.0-max(dot(vd,n),0.0);
             float lon=atan(n.z,n.x),lat=asin(clamp(n.y,-1.,1.));
-            float swirl=noise(vec2(lon*3.2,lat*8.2))*0.32;
-            float layer1=pow(fr,1.9)*(0.8+swirl);
-            float layer2=pow(fr,3.7)*(0.9+swirl*0.6);
+            float swirl=noise(vec2(lon*3.2,lat*8.2))*0.22;
+            float layer1=pow(fr,1.7)*(0.56+swirl);
+            float layer2=pow(fr,3.2)*(0.52+swirl*0.45);
             vec3 col=mix(vec3(0.62,0.34,0.08),vec3(0.98,0.71,0.23),smoothstep(0.25,1.0,fr+swirl*0.2));
             col*=(layer1+layer2);
-            gl_FragColor=vec4(col, clamp(layer1*0.28+layer2*0.46,0.0,0.80));
+            gl_FragColor=vec4(col, clamp(layer1*0.16+layer2*0.22,0.0,0.36));
         }
     `,
     // Erid — 암모니아 기반 극고압 청록 대기
@@ -389,12 +379,12 @@ const Tab3 = {
             vec3 vd=normalize(cameraPosition-vWorldPos);
             float fr=1.0-max(dot(vd,n),0.0);
             float lon=atan(n.z,n.x),lat=asin(clamp(n.y,-1.,1.));
-            float turb=noise(vec2(lon*4.0,lat*6.8))*0.24;
-            float layer1=pow(fr,2.2)*(0.95+turb);
-            float layer2=pow(fr,4.1)*(0.70+turb*0.7);
+            float turb=noise(vec2(lon*4.0,lat*6.8))*0.18;
+            float layer1=pow(fr,1.9)*(0.64+turb);
+            float layer2=pow(fr,3.6)*(0.42+turb*0.45);
             vec3 col=mix(vec3(0.07,0.22,0.32),vec3(0.19,0.47,0.56),smoothstep(0.32,1.0,fr+turb*0.2));
             col*=(layer1+layer2);
-            gl_FragColor=vec4(col, clamp(layer1*0.26+layer2*0.42,0.0,0.74));
+            gl_FragColor=vec4(col, clamp(layer1*0.14+layer2*0.20,0.0,0.34));
         }
     `,
 
@@ -509,10 +499,7 @@ const Tab3 = {
         this.scene.fog = new THREE.FogExp2(0x000306, 0.004);
 
         this.camera = new THREE.PerspectiveCamera(68, W/H, 0.1, 600);
-        this.camera.position.set(0, 0, 14);
-
-        // 시선 상태 초기화
-        this._lookH = this._lookV = this._lookHT = this._lookVT = 0;
+        this.camera.position.set(0, 0, 8);
 
         // ── 배경별 파티클 ────────────────────────────
         const SC=6000;
@@ -650,66 +637,26 @@ const Tab3 = {
         this.scene.add(dir);
 
         // ── 스크롤 ────────────────────────────────────
-        this._scroll=0; this._scrollT=0;
+        this._scroll=0.08; this._scrollT=0.08;
         this._label=document.getElementById('transit-label');
         this._onWheel=e=>{this._scrollT=clamp(this._scrollT+e.deltaY*0.0005,0,1);};
         window.addEventListener('wheel',this._onWheel,{passive:true});
         this._touchY=0;
-        this._pinchDist=0;
-        this._isDragging=false;
         this._onTouchStart=e=>{
             const t=e.touches[0];
             this._touchY=t.clientY;
-            this._prevMX=t.clientX;
-            this._prevMY=t.clientY;
-            if (e.touches.length > 1) {
-                const dx = e.touches[0].clientX - e.touches[1].clientX;
-                const dy = e.touches[0].clientY - e.touches[1].clientY;
-                this._pinchDist = Math.sqrt(dx*dx + dy*dy);
-            }
-            this._isDragging=true;
         };
         this._onTouchMove=e=>{
             if (!e.touches.length) return;
-            if (e.touches.length > 1) {
-                const dx = e.touches[0].clientX - e.touches[1].clientX;
-                const dy = e.touches[0].clientY - e.touches[1].clientY;
-                const d = Math.sqrt(dx*dx + dy*dy);
-                const dd = d - this._pinchDist;
-                this._pinchDist = d;
-                // 모바일 스크롤 대체: 핀치 줌으로 이동
-                this._scrollT=clamp(this._scrollT-dd*0.0018,0,1);
-                return;
-            }
             const t=e.touches[0];
-            const dx=t.clientX-this._prevMX, dy=t.clientY-this._prevMY;
-            this._prevMX=t.clientX; this._prevMY=t.clientY;
-            this._lookHT=clamp(this._lookHT-dx*0.006,-1.6,1.6);
-            this._lookVT=clamp(this._lookVT+dy*0.0045,-0.9,0.9);
+            const dy=t.clientY-this._touchY;
+            this._touchY=t.clientY;
+            this._scrollT=clamp(this._scrollT+dy*0.0012,0,1);
         };
-        this._onTouchEnd=()=>{this._isDragging=false; this._pinchDist=0;};
+        this._onTouchEnd=()=>{};
         window.addEventListener('touchstart',this._onTouchStart,{passive:true});
         window.addEventListener('touchmove', this._onTouchMove, {passive:true});
         window.addEventListener('touchend', this._onTouchEnd, {passive:true});
-
-        // ── 마우스 시선 제어 (클릭 드래그) ─────────────
-        this._onMouseDown=e=>{
-            if (e.button !== 0) return;
-            this._isDragging=true;
-            this._prevMX=e.clientX;
-            this._prevMY=e.clientY;
-        };
-        this._onMouseMoveDrag=e=>{
-            if(!this._isDragging) return;
-            const dx=e.clientX-this._prevMX, dy=e.clientY-this._prevMY;
-            this._prevMX=e.clientX; this._prevMY=e.clientY;
-            this._lookHT=clamp(this._lookHT-dx*0.006,-1.6,1.6);
-            this._lookVT=clamp(this._lookVT+dy*0.0045,-0.9,0.9);
-        };
-        this._onMouseUp=()=>{this._isDragging=false;};
-        window.addEventListener('mousedown', this._onMouseDown);
-        window.addEventListener('mousemove', this._onMouseMoveDrag);
-        window.addEventListener('mouseup', this._onMouseUp);
     },
 
     _getLabel(t){
@@ -729,20 +676,11 @@ const Tab3 = {
         this.camera.position.x=Math.sin(s*Math.PI*2.8)*2.5 + Math.sin(s*Math.PI*8.0)*0.4;
         this.camera.position.y=Math.sin(s*Math.PI*1.7)*1.6;
 
-        // 시선 보간 (드래그)
-        this._lookH=lerp(this._lookH,this._lookHT,0.08);
-        this._lookV=lerp(this._lookV,this._lookVT,0.08);
-
-        // lookAt: 기본 전방 + 마우스 오프셋
+        // lookAt: 스크롤 경로 전방 고정
         const baseX=this.camera.position.x*0.2;
         const baseY=this.camera.position.y*0.2;
         const baseZ=this.camera.position.z-12;
-        const LOOK_D=18;
-        this.camera.lookAt(
-            baseX+Math.sin(this._lookH)*LOOK_D,
-            baseY+this._lookV*LOOK_D,
-            baseZ
-        );
+        this.camera.lookAt(baseX, baseY, baseZ);
 
         // 행성 자전
         this._objects.forEach(({group, rot, kind})=>{
@@ -770,9 +708,6 @@ const Tab3 = {
         if(this._onTouchStart) window.removeEventListener('touchstart', this._onTouchStart);
         if(this._onTouchMove)  window.removeEventListener('touchmove',  this._onTouchMove);
         if(this._onTouchEnd)   window.removeEventListener('touchend',   this._onTouchEnd);
-        if(this._onMouseDown)  window.removeEventListener('mousedown',  this._onMouseDown);
-        if(this._onMouseMoveDrag) window.removeEventListener('mousemove', this._onMouseMoveDrag);
-        if(this._onMouseUp)    window.removeEventListener('mouseup',    this._onMouseUp);
 
         this._objects.forEach(({group})=>{
             group.children.forEach(c=>{c.geometry.dispose();c.material.dispose();});
