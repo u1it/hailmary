@@ -64,60 +64,72 @@ const Tab1 = {
         }
     `,
 
-    SUN_VERT: `
-        varying vec3 vWorldPos;
-        varying vec3 vNormal;
+    // ── 포인트 기반 태양 셰이더 (SphereGeometry 왜곡 제거) ──
+    // gl_PointCoord로 렌더링 → 어느 위치에서도 완벽한 원
+    SUN_POINT_VERT: `
+        uniform float uWorldR;
+        uniform float uH;
         void main() {
-            vNormal = normalize(normalMatrix * normal);
-            vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+            // 월드 직경 → 화면 픽셀 크기 (원근 왜곡 없음)
+            gl_PointSize = uWorldR * projectionMatrix[1][1] * uH * 0.5 / (-mvPos.z);
+            gl_Position  = projectionMatrix * mvPos;
         }
     `,
 
-    SUN_FRAG: `
+    SUN_SURF_FRAG: `
         uniform float uTime;
-        varying vec3 vWorldPos;
-        varying vec3 vNormal;
-
-        float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7))) * 43758.5453123); }
+        float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); }
         float noise(vec2 p){
-            vec2 i = floor(p), f = fract(p);
-            f = f * f * (3.0 - 2.0 * f);
-            return mix(mix(hash(i), hash(i + vec2(1.0,0.0)), f.x),
-                       mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0,1.0)), f.x), f.y);
+            vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
+            return mix(mix(hash(i),hash(i+vec2(1.0,0.0)),f.x),
+                       mix(hash(i+vec2(0.0,1.0)),hash(i+vec2(1.0,1.0)),f.x),f.y);
         }
         float fbm(vec2 p){
-            float v = 0.0;
-            float a = 0.55;
-            for(int i=0;i<5;i++){
-                v += noise(p) * a;
-                p = p * 2.03 + vec2(3.1, 5.9);
-                a *= 0.5;
-            }
+            float v=0.0,a=0.55;
+            for(int i=0;i<5;i++){v+=noise(p)*a;p=p*2.03+vec2(3.1,5.9);a*=0.5;}
             return v;
         }
-
         void main() {
-            vec3 n = normalize(vNormal);
-            float lon = atan(n.z, n.x);
-            float lat = asin(clamp(n.y, -1.0, 1.0));
-            vec2 cyc = vec2(cos(lon + uTime * 0.7), sin(lon + uTime * 0.7));
-            vec2 p = vec2(cyc.x * 2.2 + lat * 1.8, cyc.y * 2.2 - lat * 1.6);
+            vec2 uv = gl_PointCoord - vec2(0.5);
+            float d  = length(uv);
+            if (d > 0.5) discard;
 
-            float n1 = fbm(p * 2.4 + uTime * 0.8);
-            float n2 = fbm(p * 4.8 - uTime * 1.2);
-            float f = clamp(n1 * 0.68 + n2 * 0.35, 0.0, 1.0);
+            float lon = atan(uv.y, uv.x);
+            float r   = d * 2.0;
+            vec2 cyc  = vec2(cos(lon + uTime*0.7), sin(lon + uTime*0.7));
+            vec2 p    = vec2(cyc.x*2.2 + r*1.8, cyc.y*2.2 - r*1.6);
+
+            float n1 = fbm(p*2.4 + uTime*0.8);
+            float n2 = fbm(p*4.8 - uTime*1.2);
+            float f  = clamp(n1*0.68 + n2*0.35, 0.0, 1.0);
 
             vec3 core = vec3(1.00, 0.70, 0.66);
             vec3 hot  = vec3(0.80, 0.18, 0.20);
             vec3 deep = vec3(0.45, 0.05, 0.07);
-            vec3 col = mix(core, hot, smoothstep(0.15, 0.72, f));
+            vec3 col  = mix(core, hot, smoothstep(0.15, 0.72, f));
             col = mix(col, deep, smoothstep(0.62, 1.0, f));
 
-            float fres = pow(1.0 - abs(dot(normalize(cameraPosition - vWorldPos), n)), 2.1);
-            col += vec3(0.95, 0.40, 0.42) * fres * 0.65;
+            // 2D 림 글로우 (프레넬 대체)
+            float rim = smoothstep(0.34, 0.50, d);
+            col += vec3(0.95, 0.40, 0.42) * rim * 0.72;
 
-            gl_FragColor = vec4(col, 0.9);
+            float alpha = smoothstep(0.50, 0.41, d) * 0.92;
+            if (alpha < 0.003) discard;
+            gl_FragColor = vec4(col, alpha);
+        }
+    `,
+
+    SUN_GLOW_FRAG: `
+        uniform vec3  uColor;
+        uniform float uOpacity;
+        void main() {
+            vec2  uv = gl_PointCoord - vec2(0.5);
+            float d  = length(uv);
+            if (d > 0.5) discard;
+            float a = exp(-d * 5.8) * uOpacity;
+            if (a < 0.002) discard;
+            gl_FragColor = vec4(uColor, a);
         }
     `,
 
@@ -193,33 +205,43 @@ const Tab1 = {
 
         this.scene.add(new THREE.Points(this._geo, this._mat));
 
-        // ── 태양 셰이더 + 글로우 레이어 (마우스) ─────
+        // ── 태양 포인트 + 글로우 (SphereGeometry 왜곡 없음) ──
+        // gl_PointSize는 실제 프레임버퍼 픽셀 단위 → dpr 곱해야 Retina에서 올바른 크기
+        this._dpr = renderer.getPixelRatio();
+        const physH = H * this._dpr;
         this._sun = new THREE.Group();
-        this._sunUni = { uTime: { value: 0 } };
-        this._sun.add(new THREE.Mesh(
-            new THREE.SphereGeometry(0.78, 48, 48),
-            new THREE.ShaderMaterial({
-                uniforms: this._sunUni,
-                vertexShader: this.SUN_VERT,
-                fragmentShader: this.SUN_FRAG,
-                transparent: true,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false
-            })
-        ));
-        [
-            { r: 1.35, color: 0xf18e8a,  op: 0.22 },
-            { r: 2.70, color: 0xcc535a,  op: 0.10 },
-            { r: 5.60, color: 0x811d25,  op: 0.045 },
-        ].forEach(({ r, color, op }) => {
-            this._sun.add(new THREE.Mesh(
-                new THREE.SphereGeometry(r, 24, 24),
-                new THREE.MeshBasicMaterial({
-                    color, transparent: true, opacity: op,
-                    blending: THREE.AdditiveBlending, depthWrite: false
-                })
-            ));
+        this._sunUni = { uTime: {value:0}, uWorldR: {value:1.56}, uH: {value:physH} };
+        this._sunLayers = [];
+
+        // 코어: 애니메이션 표면 디스크
+        const _mkPtGeo = () => {
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0,0,0]), 3));
+            return g;
+        };
+        const coreMat = new THREE.ShaderMaterial({
+            uniforms: this._sunUni,
+            vertexShader: this.SUN_POINT_VERT, fragmentShader: this.SUN_SURF_FRAG,
+            transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
         });
+        this._sun.add(new THREE.Points(_mkPtGeo(), coreMat));
+        this._sunLayers.push(coreMat);
+
+        // 글로우 레이어 (worldR = 직경)
+        [
+            { worldR: 2.70, col:[0.945,0.557,0.541], op:0.50 },
+            { worldR: 5.40, col:[0.800,0.325,0.353], op:0.22 },
+            { worldR:11.20, col:[0.506,0.114,0.145], op:0.10 },
+        ].forEach(({ worldR, col, op }) => {
+            const mat = new THREE.ShaderMaterial({
+                uniforms: { uWorldR:{value:worldR}, uH:{value:physH}, uColor:{value:new THREE.Vector3(...col)}, uOpacity:{value:op} },
+                vertexShader: this.SUN_POINT_VERT, fragmentShader: this.SUN_GLOW_FRAG,
+                transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+            });
+            this._sun.add(new THREE.Points(_mkPtGeo(), mat));
+            this._sunLayers.push(mat);
+        });
+
         this._sun.position.set(this._mwx, this._mwy, 0);
         this.scene.add(this._sun);
 
@@ -377,6 +399,11 @@ const Tab1 = {
             this._home[i*3]   = (Math.random()-0.5) * hw * 2.2;
             this._home[i*3+1] = (Math.random()-0.5) * hh * 2.2;
         }
+        // 태양 포인트 크기 갱신 (뷰포트 변경 시 픽셀 재계산)
+        if (this._sunLayers) {
+            const physH = H * (this._dpr || 1);
+            this._sunLayers.forEach(mat => { mat.uniforms.uH.value = physH; });
+        }
     },
 
     dispose() {
@@ -384,6 +411,7 @@ const Tab1 = {
         if (this._mat) this._mat.dispose();
         if (this._sun) {
             this._sun.children.forEach(c => { c.geometry.dispose(); c.material.dispose(); });
+            this._sunLayers = null;
         }
         if (this._bokeh) {
             this._bokeh.forEach(b => {
