@@ -41,8 +41,8 @@
     let cursorRX = window.innerWidth / 2, cursorRY = window.innerHeight / 2;
     mouse.sx = cursorRX; mouse.sy = cursorRY;
 
-    // ─── 힌트 자동 숨김 ──────────────────────
-    const allHints = document.querySelectorAll('.hint');
+    // ─── 힌트 + 탭 타이틀 자동 숨김 ─────────
+    const allHints = document.querySelectorAll('.hint, .tab-ui');
     let hintTimer  = null;
 
     function showHints() {
@@ -57,7 +57,11 @@
         hintTimer = setTimeout(showHints, 3000);
     }
 
-    document.addEventListener('mousemove',  onUserAction);
+    // Tab3는 스크롤만 인터랙션 — 마우스 이동으로는 숨기지 않음
+    document.addEventListener('mousemove', () => {
+        if (current === Tab3) return;
+        onUserAction();
+    });
     document.addEventListener('wheel',      onUserAction, { passive: true });
     document.addEventListener('touchstart', onUserAction, { passive: true });
     document.addEventListener('touchmove',  onUserAction, { passive: true });

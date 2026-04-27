@@ -182,6 +182,15 @@ h2 {
     50%       { opacity: 0.8; }
 }
 
+/* ─── Tab UI fade on interact ────────────── */
+.tab-ui {
+    transition: opacity 2.0s ease;
+}
+.tab-ui.hint-hidden {
+    opacity: 0;
+    transition: opacity 0.65s ease;
+}
+
 /* ─── Transit Label ──────────────────────── */
 .transit-label {
     font-family: 'Cormorant Garamond', serif;

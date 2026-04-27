@@ -10,6 +10,7 @@ const Tab1 = {
     _col:   null,
     _sun:   null,
     _sunUni: null,
+    _bokeh: null,
     _mwx:   0,
     _mwy:   0,
 
@@ -57,8 +58,8 @@ const Tab1 = {
 
             if (brightness < 0.007) discard;
 
-            // 중심 → 흰색, 바깥 → 입자 색
-            vec3 col = mix(vec3(1.0, 0.96, 0.90), vColor, clamp(d * 3.2, 0.0, 1.0));
+            // 중심 → 핑크-화이트, 바깥 → 입자 색
+            vec3 col = mix(vec3(1.0, 0.88, 0.86), vColor, clamp(d * 3.2, 0.0, 1.0));
             gl_FragColor = vec4(col * brightness, brightness);
         }
     `,
@@ -107,14 +108,14 @@ const Tab1 = {
             float n2 = fbm(p * 4.8 - uTime * 1.2);
             float f = clamp(n1 * 0.68 + n2 * 0.35, 0.0, 1.0);
 
-            vec3 core = vec3(1.0, 0.95, 0.78);
-            vec3 hot  = vec3(1.0, 0.62, 0.18);
-            vec3 deep = vec3(1.0, 0.28, 0.05);
+            vec3 core = vec3(1.00, 0.70, 0.66);
+            vec3 hot  = vec3(0.80, 0.18, 0.20);
+            vec3 deep = vec3(0.45, 0.05, 0.07);
             vec3 col = mix(core, hot, smoothstep(0.15, 0.72, f));
             col = mix(col, deep, smoothstep(0.62, 1.0, f));
 
             float fres = pow(1.0 - abs(dot(normalize(cameraPosition - vWorldPos), n)), 2.1);
-            col += vec3(1.0, 0.5, 0.12) * fres * 0.6;
+            col += vec3(0.95, 0.40, 0.42) * fres * 0.65;
 
             gl_FragColor = vec4(col, 0.9);
         }
@@ -122,7 +123,8 @@ const Tab1 = {
 
     init(renderer, W, H) {
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x020104);
+        this.scene.background = new THREE.Color(0x0d0102);
+        this.scene.fog = new THREE.FogExp2(0x0d0102, 0.014);
         this.camera = new THREE.PerspectiveCamera(65, W / H, 0.1, 200);
         this.camera.position.set(0, 0, 18);
 
@@ -154,14 +156,20 @@ const Tab1 = {
             else if (r < 0.90) scales[i] = 0.70 + Math.random() * 0.80;  // 중간
             else               scales[i] = 1.60 + Math.random() * 1.80;  // 큰 별
 
-            // 핑크 + 빨강 팔레트
+            // 고채도 크림슨 팔레트 — G,B를 낮춰 붉은 색 순도를 높임
             const type = Math.random();
-            if (type < 0.44) {
-                col[i*3] = 0.95 + Math.random()*0.05; col[i*3+1] = 0.07+Math.random()*0.18; col[i*3+2] = 0.40+Math.random()*0.35;
-            } else if (type < 0.76) {
-                col[i*3] = 0.88 + Math.random()*0.12; col[i*3+1] = 0.02+Math.random()*0.08; col[i*3+2] = 0.04+Math.random()*0.08;
+            if (type < 0.42) {
+                // #cc535a 계열 — 순수 채도 높은 레드
+                col[i*3] = 0.88+Math.random()*0.12; col[i*3+1] = 0.14+Math.random()*0.10; col[i*3+2] = 0.12+Math.random()*0.10;
+            } else if (type < 0.70) {
+                // #811d25 계열 — 딥 크림슨
+                col[i*3] = 0.54+Math.random()*0.18; col[i*3+1] = 0.04+Math.random()*0.06; col[i*3+2] = 0.04+Math.random()*0.06;
+            } else if (type < 0.88) {
+                // #f18e8a 계열 — 화사한 핑크 하이라이트
+                col[i*3] = 0.94+Math.random()*0.06; col[i*3+1] = 0.50+Math.random()*0.12; col[i*3+2] = 0.44+Math.random()*0.12;
             } else {
-                col[i*3] = 0.98; col[i*3+1] = 0.22+Math.random()*0.22; col[i*3+2] = 0.02+Math.random()*0.06;
+                // #a9343d 계열 — 비비드 레드 포인트
+                col[i*3] = 0.72+Math.random()*0.14; col[i*3+1] = 0.10+Math.random()*0.08; col[i*3+2] = 0.10+Math.random()*0.08;
             }
         }
 
@@ -174,7 +182,7 @@ const Tab1 = {
         this._geo.setAttribute('aScale',   new THREE.BufferAttribute(scales, 1));
 
         this._mat = new THREE.ShaderMaterial({
-            uniforms:       { uSize: { value: 1.4 } },
+            uniforms:       { uSize: { value: 1.8 } },
             vertexShader:   this.VERT,
             fragmentShader: this.FRAG,
             transparent:    true,
@@ -200,9 +208,9 @@ const Tab1 = {
             })
         ));
         [
-            { r: 1.35, color: 0xffa64a,  op: 0.2 },
-            { r: 2.70, color: 0xff5f1a,  op: 0.08 },
-            { r: 5.60, color: 0xff2d08,  op: 0.025 },
+            { r: 1.35, color: 0xf18e8a,  op: 0.22 },
+            { r: 2.70, color: 0xcc535a,  op: 0.10 },
+            { r: 5.60, color: 0x811d25,  op: 0.045 },
         ].forEach(({ r, color, op }) => {
             this._sun.add(new THREE.Mesh(
                 new THREE.SphereGeometry(r, 24, 24),
@@ -214,6 +222,76 @@ const Tab1 = {
         });
         this._sun.position.set(this._mwx, this._mwy, 0);
         this.scene.add(this._sun);
+
+        // ── 안개 스프라이트 (아스트로파지 군체) ──────────
+        // 캔버스 방사형 그라디언트 텍스처 → 진짜 안개/보케 느낌
+        const FOG_C = [
+            {r:241,g:142,b:138}, // #f18e8a
+            {r:204,g:83, b:90},  // #cc535a
+            {r:169,g:52, b:61},  // #a9343d
+            {r:129,g:29, b:37},  // #811d25
+            {r:86, g:18, b:23},  // #561217
+        ];
+        this._bokeh = [];
+        const _mkTex = (fc) => {
+            const sz = 256, cv = document.createElement('canvas');
+            cv.width = cv.height = sz;
+            const ctx = cv.getContext('2d'), c = sz/2;
+            const g = ctx.createRadialGradient(c,c,0,c,c,c);
+            g.addColorStop(0.00, `rgba(${fc.r},${fc.g},${fc.b},1.0)`);
+            g.addColorStop(0.30, `rgba(${fc.r},${fc.g},${fc.b},0.50)`);
+            g.addColorStop(0.62, `rgba(${fc.r},${fc.g},${fc.b},0.12)`);
+            g.addColorStop(1.00, `rgba(${fc.r},${fc.g},${fc.b},0.00)`);
+            ctx.fillStyle = g; ctx.fillRect(0,0,sz,sz);
+            return new THREE.CanvasTexture(cv);
+        };
+
+        // 레이어 1: 대형 대기 워시 — 화면 가득 채우는 붉은 안개 기저층
+        for (let i = 0; i < 4; i++) {
+            const fc  = FOG_C[3 + (i % 2)];
+            const op  = 0.18 + Math.random() * 0.12;
+            const mat = new THREE.SpriteMaterial({ map:_mkTex(fc), transparent:true, opacity:op, blending:THREE.AdditiveBlending, depthWrite:false });
+            const s   = new THREE.Sprite(mat);
+            const sc  = hw * (1.5 + Math.random() * 0.9);
+            s.scale.set(sc, sc, 1);
+            s.position.set((Math.random()-0.5)*hw*0.5, (Math.random()-0.5)*hh*0.5, -3 - Math.random()*3);
+            this.scene.add(s);
+            this._bokeh.push({ sprite:s, phase:Math.random()*Math.PI*2, baseOp:op, vx:0, vy:0, limX:0, limY:0 });
+        }
+
+        // 레이어 2: 중형 안개 덩어리 — 이미지의 핵심 보케
+        for (let i = 0; i < 14; i++) {
+            const fc  = FOG_C[Math.floor(Math.random()*4)];
+            const op  = 0.28 + Math.random() * 0.24;
+            const mat = new THREE.SpriteMaterial({ map:_mkTex(fc), transparent:true, opacity:op, blending:THREE.AdditiveBlending, depthWrite:false });
+            const s   = new THREE.Sprite(mat);
+            const sc  = 3.0 + Math.random() * 5.5;
+            s.scale.setScalar(sc);
+            s.position.set((Math.random()-0.5)*hw*2.2, (Math.random()-0.5)*hh*2.2, (Math.random()-0.5)*8 - 1);
+            this.scene.add(s);
+            this._bokeh.push({
+                sprite:s, phase:Math.random()*Math.PI*2, baseOp:op,
+                vx:(Math.random()-0.5)*0.006, vy:(Math.random()-0.5)*0.004,
+                limX:hw*1.2, limY:hh*1.2
+            });
+        }
+
+        // 레이어 3: 소형 밝은 핫스팟 — 전경 밝은 클러스터
+        for (let i = 0; i < 8; i++) {
+            const fc  = FOG_C[Math.floor(Math.random()*2)];
+            const op  = 0.45 + Math.random() * 0.25;
+            const mat = new THREE.SpriteMaterial({ map:_mkTex(fc), transparent:true, opacity:op, blending:THREE.AdditiveBlending, depthWrite:false });
+            const s   = new THREE.Sprite(mat);
+            const sc  = 0.9 + Math.random() * 2.0;
+            s.scale.setScalar(sc);
+            s.position.set((Math.random()-0.5)*hw*1.8, (Math.random()-0.5)*hh*1.8, Math.random()*3 + 0.5);
+            this.scene.add(s);
+            this._bokeh.push({
+                sprite:s, phase:Math.random()*Math.PI*2, baseOp:op,
+                vx:(Math.random()-0.5)*0.009, vy:(Math.random()-0.5)*0.007,
+                limX:hw*1.0, limY:hh*1.0
+            });
+        }
     },
 
     onMouseMove(nx, ny) {
@@ -249,10 +327,10 @@ const Tab1 = {
                 const power = 1 - dist / REPEL_R;
                 ax += (dx / dist) * power * 10;
                 ay += (dy / dist) * power * 10;
-                // 태양 열기 → 흰색+주황으로
-                col[i3]   = lerp(col[i3],   1.0, power * 0.45);
-                col[i3+1] = lerp(col[i3+1], 0.75 * power, 0.15);
-                col[i3+2] = lerp(col[i3+2], 0.08, 0.1);
+                // 태양 열기 → 핑크-화이트로
+                col[i3]   = lerp(col[i3],   1.00, power * 0.50);
+                col[i3+1] = lerp(col[i3+1], 0.55 * power, 0.20);
+                col[i3+2] = lerp(col[i3+2], 0.50 * power, 0.20);
             }
 
             vel[i3]   = (vel[i3]   + ax) * DAMP;
@@ -272,6 +350,19 @@ const Tab1 = {
             const pulse = 1 + Math.sin(elapsed * 3.5) * 0.06;
             this._sun.scale.setScalar(pulse);
             if (this._sunUni) this._sunUni.uTime.value = elapsed;
+        }
+
+        // 안개 드리프트 + 호흡 펄스
+        if (this._bokeh) {
+            this._bokeh.forEach(b => {
+                if (b.limX > 0) {
+                    b.sprite.position.x += b.vx;
+                    b.sprite.position.y += b.vy;
+                    if (Math.abs(b.sprite.position.x) > b.limX) b.vx *= -1;
+                    if (Math.abs(b.sprite.position.y) > b.limY) b.vy *= -1;
+                }
+                b.sprite.material.opacity = b.baseOp + Math.sin(elapsed * 0.22 + b.phase) * 0.05;
+            });
         }
     },
 
@@ -293,6 +384,13 @@ const Tab1 = {
         if (this._mat) this._mat.dispose();
         if (this._sun) {
             this._sun.children.forEach(c => { c.geometry.dispose(); c.material.dispose(); });
+        }
+        if (this._bokeh) {
+            this._bokeh.forEach(b => {
+                if (b.sprite.material.map) b.sprite.material.map.dispose();
+                b.sprite.material.dispose();
+            });
+            this._bokeh = null;
         }
         this._geo = this._mat = this._home = this._pos = this._vel = this._col = null;
         this._scales = this._sun = this._sunUni = null;

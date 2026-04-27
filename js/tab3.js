@@ -17,15 +17,9 @@ const Tab3 = {
     _onWheel:      null,
     _onTouchStart: null,
     _onTouchMove:  null,
+    _onTouchEnd:   null,
     _touchY:  0,
     _label:   null,
-    // 마우스 시선 제어
-    _lookH: 0, _lookV: 0,
-    _lookHT: 0, _lookVT: 0,
-    _isDragging: false,
-    _prevMX: 0, _prevMY: 0,
-    _onMouseDown: null, _onMouseUp: null, _onMouseLook: null,
-
     // ── 배경별 파티클 셰이더 ──────────────────────
     STAR_VERT: `
         uniform  float uSize;
@@ -55,6 +49,18 @@ const Tab3 = {
             float b=clamp(glow+spikes*max(0.0,0.92-d*1.4),0.0,1.0);
             if(b<0.007) discard;
             gl_FragColor=vec4(mix(vec3(1.0,0.97,0.92),vColor,clamp(d*3.0,0.0,1.0))*b,b);
+        }
+    `,
+    PETRO_FRAG: `
+        varying vec3 vColor;
+        void main(){
+            vec2 uv = gl_PointCoord - vec2(0.5);
+            float d = length(uv);
+            if (d > 0.5) discard;
+            float a = smoothstep(0.5, 0.0, d);
+            a = a * a * 0.65;
+            if (a < 0.01) discard;
+            gl_FragColor = vec4(vColor * (0.7 + a * 0.3), a);
         }
     `,
 
@@ -112,6 +118,46 @@ const Tab3 = {
             vNormal   = normalize(normalMatrix*normal);
             vWorldPos = (modelMatrix*vec4(position,1.0)).xyz;
             gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);
+        }
+    `,
+    PLANET_GENERIC_FRAG: `
+        uniform float uTime;
+        uniform vec3 uColorA;
+        uniform vec3 uColorB;
+        uniform vec3 uColorC;
+        uniform float uBanding;
+        uniform float uRough;
+        varying vec3 vWorldPos; varying vec3 vNormal;
+        float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);}
+        float noise(vec2 p){
+            vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+            return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);
+        }
+        float fbm(vec2 p){
+            float v=0.0,a=0.5;
+            for(int i=0;i<5;i++){v+=a*noise(p);p=p*2.07+vec2(1.2,3.7);a*=0.5;}
+            return v;
+        }
+        void main(){
+            vec3 n=normalize(vNormal);
+            float lon=atan(n.z,n.x), lat=asin(clamp(n.y,-1.,1.));
+            vec2 p=vec2(cos(lon+uTime*0.02), sin(lon+uTime*0.02))*2.2+vec2(lat*1.7,-lat*1.4);
+            float n1=fbm(p*2.5+uTime*0.03);
+            float n2=fbm(p*5.4-uTime*0.04);
+            float bands=0.5+0.5*sin(lat*uBanding + n1*3.2);
+            float h=clamp(n1*0.65+n2*0.25+bands*0.35,0.0,1.0);
+            vec3 col=mix(uColorA,uColorB,smoothstep(0.18,0.62,h));
+            col=mix(col,uColorC,smoothstep(0.62,0.96,h));
+            vec3 lightDir=normalize(vec3(-3.2,1.2,6.0));
+            float diff=clamp(dot(n,lightDir),0.0,1.0);
+            vec3 viewDir=normalize(cameraPosition-vWorldPos);
+            vec3 halfVec=normalize(lightDir+viewDir);
+            float spec=pow(max(dot(n,halfVec),0.0),mix(12.0,48.0,uRough))*mix(0.12,0.42,1.0-uRough);
+            col*=0.12+0.88*diff;
+            col+=vec3(0.8,0.9,1.0)*spec*diff;
+            float rim=pow(1.0-clamp(dot(viewDir,n),0.0,1.0),2.7);
+            col+=uColorC*rim*0.14;
+            gl_FragColor=vec4(col,1.0);
         }
     `,
 
@@ -281,91 +327,51 @@ const Tab3 = {
         }
     `,
 
-    // ── 대기권 셰이더 ────────────────────────────────
-    ATM_VERT: `
-        varying vec3 vNormal; varying vec3 vWorldPos;
-        void main(){
-            vNormal   = normalize(normalMatrix*normal);
-            vWorldPos = (modelMatrix*vec4(position,1.0)).xyz;
-            gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);
-        }
-    `,
-    // 지구 — 레일리 산란 파란 대기
-    EARTH_ATM_FRAG: `
-        varying vec3 vNormal; varying vec3 vWorldPos;
-        void main(){
-            vec3 vd=normalize(cameraPosition-vWorldPos);
-            float fr=1.0-abs(dot(vd,vNormal));
-            float layer1=pow(fr,2.8)*1.5;
-            float layer2=pow(fr,1.35)*0.38;
-            vec3 col=mix(vec3(0.10,0.38,0.95),vec3(0.28,0.65,1.00),smoothstep(0.5,1.0,fr));
-            col*=(layer1+layer2);
-            gl_FragColor=vec4(col, clamp(layer1*0.62+layer2*0.20,0.0,0.90));
-        }
-    `,
-    // Adrian — 고온·고압·타우메바 서식 금성형 두꺼운 대기
-    ADRIAN_ATM_FRAG: `
-        varying vec3 vNormal; varying vec3 vWorldPos;
-        void main(){
-            vec3 vd=normalize(cameraPosition-vWorldPos);
-            float fr=1.0-abs(dot(vd,vNormal));
-            float layer1=pow(fr,2.5)*1.4;
-            float layer2=pow(fr,1.15)*0.52;
-            vec3 col=mix(vec3(0.85,0.52,0.12),vec3(1.00,0.78,0.28),smoothstep(0.4,1.0,fr));
-            col*=(layer1+layer2);
-            gl_FragColor=vec4(col, clamp(layer1*0.68+layer2*0.30,0.0,0.95));
-        }
-    `,
-    // Erid — 암모니아 기반 극고압 청록 대기
-    ERID_ATM_FRAG: `
-        varying vec3 vNormal; varying vec3 vWorldPos;
-        void main(){
-            vec3 vd=normalize(cameraPosition-vWorldPos);
-            float fr=1.0-abs(dot(vd,vNormal));
-            float layer1=pow(fr,2.6)*1.6;
-            float layer2=pow(fr,1.25)*0.46;
-            vec3 col=mix(vec3(0.10,0.28,0.40),vec3(0.20,0.48,0.55),smoothstep(0.4,1.0,fr));
-            col*=(layer1+layer2);
-            gl_FragColor=vec4(col, clamp(layer1*0.72+layer2*0.32,0.0,0.95));
-        }
-    `,
-
     // Solar → Tau Ceti → 40 Eridani (삼중성계)
+    // 행성 위치: 카메라 경로 x좌표(sin(s*PI*2.8)*2.5) 기준으로 가까이 배치
+    // 내행성 구간 cam_x ≈ +2.2~2.5 / 외행성 cam_x ≈ 0→-1.3
+    // TauCeti 구간 cam_x ≈ -2.4 / 40Eridani 구간 cam_x ≈ +2.5
     BODIES: [
         { type:'star',   name:'Sol',      r:2.20, glow:0xff8800,
-          core:[1.00,0.95,0.78], mid:[1.00,0.62,0.18], rim:[1.00,0.28,0.05],
-          g1:0xffcc33, g2:0xff4400, pos:[ 0.0,  0.0,   0.0] },
-        { type:'planet', name:'Earth',    r:0.48, color:0x2a70bb, glow:0x55aaee,
-          pos:[ 3.5, -0.3,  -5.0] },
+            core:[0.52,0.47,0.34], mid:[0.50,0.26,0.06], rim:[0.44,0.09,0.02],
+            g1:0xffcc33, g2:0xff4400, dim:0.42, pos:[ 0.0,  0.0,   0.0] },
+        { type:'planet', name:'Mercury',  kind:'rock', r:0.22, color:0x9a8873, glow:0x664c35, rot:0.08, pos:[ 1.8, -0.5,  -3.2] },
+        { type:'planet', name:'Venus',    kind:'rock', r:0.34, color:0xd4b16a, glow:0xaa8850, rot:0.05, pos:[ 3.0,  0.7,  -7.5] },
+        { type:'planet', name:'Earth',    kind:'earth',r:0.48, color:0x2a70bb, glow:0x55aaee, rot:0.12, pos:[ 1.6, -0.9, -12.5] },
+        { type:'planet', name:'Mars',     kind:'rock', r:0.30, color:0xb45c3b, glow:0x883322, rot:0.09, pos:[ 2.8,  0.8, -17.5] },
+        { type:'planet', name:'Jupiter',  kind:'gas',  r:0.95, color:0xd8b78a, glow:0xb18a56, rot:0.16, pos:[ 0.6, -1.2, -24.0] },
+        { type:'planet', name:'Saturn',   kind:'gas',  r:0.86, color:0xd7c487, glow:0xa78f58, rot:0.14, pos:[ 1.5,  1.1, -30.0] },
+        { type:'planet', name:'Uranus',   kind:'ice',  r:0.63, color:0x8dc3d2, glow:0x5f8f9e, rot:0.12, pos:[-1.2, -0.6, -36.5] },
+        { type:'planet', name:'Neptune',  kind:'ice',  r:0.61, color:0x3d63c8, glow:0x2945a0, rot:0.13, pos:[-0.5,  0.6, -43.0] },
         { type:'star',   name:'TauCeti',  r:1.68, glow:0xffaa22,
-          core:[1.00,0.92,0.72], mid:[1.00,0.72,0.28], rim:[0.95,0.45,0.08],
-          g1:0xffbb22, g2:0xff7700, pos:[-1.8,  1.2, -50.0] },
-        { type:'planet', name:'Adrian',   r:0.52, color:0x0b3020, glow:0x22ee66,
-          pos:[-2.6,  0.9, -57.5] },
-        // 40 Eridani 삼중성계
+            core:[1.00,0.92,0.72], mid:[1.00,0.72,0.28], rim:[0.95,0.45,0.08],
+            g1:0xffbb22, g2:0xff7700, pos:[-2.0,  1.2, -62.0] },
+        { type:'planet', name:'Adrian',   kind:'adrian', r:0.52, color:0x0b3020, glow:0x22ee66, rot:0.11, pos:[-2.8,  0.7, -69.5] },
+        { type:'planet', name:'Tau Ceti f', kind:'rock', r:0.46, color:0x9f9074, glow:0x6f5b45, rot:0.08, pos:[-0.8, -0.4, -74.5] },
+        { type:'planet', name:'Tau Ceti g', kind:'ice',  r:0.54, color:0x6c92b5, glow:0x4e7595, rot:0.10, pos:[-1.4,  0.5, -80.5] },
+        // 40 Eridani 삼중성계 — cam_x ≈ +2.5 구간
         { type:'star',   name:'40EridA',  r:1.85, glow:0xff5a20,
-          core:[1.00,0.82,0.56], mid:[1.00,0.55,0.15], rim:[0.90,0.30,0.05],
-          g1:0xff9944, g2:0xff3300, pos:[-2.1,  1.4, -90.0] },
+            core:[0.46,0.32,0.18], mid:[0.46,0.20,0.05], rim:[0.36,0.09,0.02],
+            g1:0xff9944, g2:0xff3300, dim:0.38, pos:[ 1.8,  1.2, -108.0] },
         { type:'star',   name:'40EridB',  r:0.24, glow:0xaaccff,   // 백색왜성
-          core:[0.94,0.96,1.00], mid:[0.82,0.90,1.00], rim:[0.70,0.82,0.98],
-          g1:0xaabbff, g2:0x7799ff, pos:[-0.9,  2.3, -88.8] },
+            core:[0.94,0.96,1.00], mid:[0.82,0.90,1.00], rim:[0.70,0.82,0.98],
+            g1:0xaabbff, g2:0x7799ff, pos:[ 3.2,  2.2, -106.8] },
         { type:'star',   name:'40EridC',  r:0.48, glow:0xff3300,   // 적색왜성
-          core:[1.00,0.42,0.12], mid:[0.90,0.25,0.04], rim:[0.70,0.10,0.02],
-          g1:0xff4400, g2:0xcc1100, pos:[-3.6,  0.4, -91.5] },
-        { type:'planet', name:'Erid',     r:0.62, color:0x0b0814, glow:0x2244aa,
-          pos:[ 2.4,  0.2, -98.0] },
+            core:[1.00,0.42,0.12], mid:[0.90,0.25,0.04], rim:[0.70,0.10,0.02],
+            g1:0xff4400, g2:0xcc1100, pos:[ 0.6,  0.3, -109.5] },
+        { type:'planet', name:'Erid',     kind:'erid', r:0.62, color:0x0b0814, glow:0x2244aa, rot:0.12, pos:[ 2.2,  0.2, -116.0] },
     ],
 
     LABELS: [
         { t:0.00, text:'Sol System' },
-        { t:0.09, text:'Earth Orbit' },
-        { t:0.20, text:'Solar Escape' },
-        { t:0.36, text:'Interstellar Void' },
+        { t:0.08, text:'Inner Rocky Planets' },
+        { t:0.20, text:'Gas / Ice Giants' },
+        { t:0.34, text:'Solar Escape' },
         { t:0.50, text:'Tau Ceti System' },
-        { t:0.58, text:'Silent Zone — Adrian' },
-        { t:0.68, text:'Interstellar Void' },
-        { t:0.82, text:'40 Eridani System' },
-        { t:0.91, text:'Erid Orbit' },
+        { t:0.60, text:'Tau Ceti e (Adrian)' },
+        { t:0.68, text:'Tau Ceti f / g' },
+        { t:0.82, text:'40 Eridani Triple Star' },
+        { t:0.92, text:'Erid Orbit (40 Eridani A)' },
         { t:0.97, text:'First Contact Zone' },
     ],
 
@@ -379,17 +385,26 @@ const Tab3 = {
             })
         );
     },
-    _makeAtmosphere(r, fragShader) {
-        return new THREE.Mesh(
-            new THREE.SphereGeometry(r, 32, 32),
-            new THREE.ShaderMaterial({
-                vertexShader:this.ATM_VERT, fragmentShader:fragShader,
-                transparent:true, blending:THREE.AdditiveBlending,
-                depthWrite:false, side:THREE.BackSide
-            })
-        );
+    _makeGenericPlanetUniforms(kind, colorHex) {
+        const c = new THREE.Color(colorHex || 0x888888);
+        const a = c.clone().multiplyScalar(0.55);
+        const b = c.clone().multiplyScalar(0.95);
+        const d = c.clone().lerp(new THREE.Color(0xffffff), 0.35);
+        let banding = 4.5;
+        let rough = 0.72;
+        if (kind === 'gas') { banding = 16.0; rough = 0.45; }
+        else if (kind === 'ice') { banding = 9.0; rough = 0.28; }
+        return {
+            uTime:{value:0},
+            uColorA:{value:new THREE.Vector3(a.r,a.g,a.b)},
+            uColorB:{value:new THREE.Vector3(b.r,b.g,b.b)},
+            uColorC:{value:new THREE.Vector3(d.r,d.g,d.b)},
+            uBanding:{value:banding},
+            uRough:{value:rough}
+        };
     },
-    _makeStar(r, core, mid, rim, g1, g2) {
+    _makeStar(r, core, mid, rim, g1, g2, dim) {
+        const d = (dim !== undefined) ? dim : 1.0;
         const uni = {
             uTime: {value:0},
             uCore: {value: new THREE.Vector3(core[0],core[1],core[2])},
@@ -405,9 +420,9 @@ const Tab3 = {
                 fragmentShader:this.STAR_SURF_FRAG,
             })
         ));
-        g.add(this._makeGlow(r*1.5,  g1, 0.28));
-        g.add(this._makeGlow(r*2.5,  g1, 0.12));
-        g.add(this._makeGlow(r*5.0,  g2, 0.05));
+        g.add(this._makeGlow(r*1.5,  g1, 0.28 * d));
+        g.add(this._makeGlow(r*2.5,  g1, 0.12 * d));
+        g.add(this._makeGlow(r*5.0,  g2, 0.05 * d));
         return { group:g, uni };
     },
 
@@ -417,11 +432,7 @@ const Tab3 = {
         this.scene.fog = new THREE.FogExp2(0x000306, 0.004);
 
         this.camera = new THREE.PerspectiveCamera(68, W/H, 0.1, 600);
-        this.camera.position.set(0, 0, 14);
-
-        // 시선 상태 초기화
-        this._lookH = this._lookV = this._lookHT = this._lookVT = 0;
-        this._isDragging = false;
+        this.camera.position.set(0, 3.5, 18);
 
         // ── 배경별 파티클 ────────────────────────────
         const SC=6000;
@@ -462,8 +473,8 @@ const Tab3 = {
         }
         for(let i=600;i<900;i++){
             const a=Math.random()*Math.PI*2,r=3+Math.random()*7;
-            ap[i*3]=-1.8+Math.cos(a)*r;ap[i*3+1]=1.2+(Math.random()-0.5)*2.5;
-            ap[i*3+2]=-50.0+Math.sin(a)*r*0.4+(Math.random()-0.5)*9;
+            ap[i*3]=-2.0+Math.cos(a)*r;ap[i*3+1]=1.2+(Math.random()-0.5)*2.5;
+            ap[i*3+2]=-52.0+Math.sin(a)*r*0.4+(Math.random()-0.5)*9;
             as_[i]=0.22+Math.random()*0.48;
             const g=0.32+Math.random()*0.22;ac[i*3]=g*1.12;ac[i*3+1]=g*0.92;ac[i*3+2]=g*0.68;
         }
@@ -481,44 +492,38 @@ const Tab3 = {
         // ── 항성 구체 (모든 star 타입) ───────────────
         this._starObjs=[]; this._starUnis=[];
         this.BODIES.filter(b=>b.type==='star').forEach(b=>{
-            const {group,uni}=this._makeStar(b.r,b.core,b.mid,b.rim,b.g1,b.g2);
+            const {group,uni}=this._makeStar(b.r,b.core,b.mid,b.rim,b.g1,b.g2,b.dim);
             group.position.set(...b.pos);
             this.scene.add(group);
             this._starObjs.push(group);
             this._starUnis.push(uni);
         });
 
-        // ── Petrova Line: Sol → TauCeti → 40EridaniA ─
-        // Adrian(z≈-57.5) 부근 극도로 희미 (타우메바가 아스트로파지 소비)
+        // ── Petrova Flow: 성간 물질 흐름 (항성-항성 직결 아님) ─
+        // 항성 자체를 연결하지 않고 성간 공간을 따라 퍼지는 흐름으로 표현
         const PC=3200;
         const pp=new Float32Array(PC*3),pc=new Float32Array(PC*3),ps=new Float32Array(PC);
-        const pSol  ={x:0.0,y:0.0,z:0.0};
-        const pTauC ={x:-1.8,y:1.2,z:-50.0};
-        const p40E  ={x:-2.1,y:1.4,z:-90.0};
-        const FADE_Z=-57.5, FADE_R=6.0;
+        const p0 ={x: 1.2, y:-0.8, z:-12.0};
+        const p1 ={x:-3.2, y: 1.5, z:-44.0};
+        const p2 ={x:-1.0, y:-1.0, z:-83.0};
+        const p3 ={x: 3.2, y: 1.0, z:-121.0};
+        const FADE_Z=-69.5, FADE_R=10.0;
         const ssFade=x=>{const t=Math.max(0,Math.min(1,Math.abs(x-FADE_Z)/FADE_R));return t*t*(3-2*t);};
         for(let i=0;i<PC;i++){
             const u=i/(PC-1);
-            let cx,cy,cz;
-            if(u<0.52){
-                const v=u/0.52;
-                cx=lerp(pSol.x,pTauC.x,v)+Math.sin(v*Math.PI*7.5)*0.30;
-                cy=lerp(pSol.y,pTauC.y,v)+Math.sin(v*Math.PI*4.8)*0.20;
-                cz=lerp(pSol.z,pTauC.z,v);
-            } else {
-                const v=(u-0.52)/0.48;
-                cx=lerp(pTauC.x,p40E.x,v)+Math.sin(v*Math.PI*6.2+2.1)*0.28;
-                cy=lerp(pTauC.y,p40E.y,v)+Math.sin(v*Math.PI*4.0+1.3)*0.18;
-                cz=lerp(pTauC.z,p40E.z,v);
-            }
+            const omt=1.0-u;
+            const cx = omt*omt*omt*p0.x + 3.0*omt*omt*u*p1.x + 3.0*omt*u*u*p2.x + u*u*u*p3.x;
+            const cy = omt*omt*omt*p0.y + 3.0*omt*omt*u*p1.y + 3.0*omt*u*u*p2.y + u*u*u*p3.y;
+            const cz = omt*omt*omt*p0.z + 3.0*omt*omt*u*p1.z + 3.0*omt*u*u*p2.z + u*u*u*p3.z;
             pp[i*3]=cx+(Math.random()-0.5)*0.14;
             pp[i*3+1]=cy+(Math.random()-0.5)*0.14;
             pp[i*3+2]=cz+(Math.random()-0.5)*0.10;
             const dim=0.03+0.97*ssFade(cz);
             const type=Math.random();
-            if(type<0.50){pc[i*3]=(0.97+Math.random()*0.03)*dim;pc[i*3+1]=(0.04+Math.random()*0.08)*dim;pc[i*3+2]=(0.48+Math.random()*0.38)*dim;}
-            else if(type<0.85){pc[i*3]=(0.94+Math.random()*0.06)*dim;pc[i*3+1]=(0.01+Math.random()*0.05)*dim;pc[i*3+2]=(0.18+Math.random()*0.16)*dim;}
-            else{pc[i*3]=1.00*dim;pc[i*3+1]=(0.08+Math.random()*0.10)*dim;pc[i*3+2]=(0.38+Math.random()*0.20)*dim;}
+            // 블루-바이올렛 플라즈마 — 항성간 물질 흐름 색
+            if(type<0.50){pc[i*3]=(0.40+Math.random()*0.18)*dim;pc[i*3+1]=(0.20+Math.random()*0.15)*dim;pc[i*3+2]=(0.95+Math.random()*0.05)*dim;}
+            else if(type<0.82){pc[i*3]=(0.12+Math.random()*0.12)*dim;pc[i*3+1]=(0.60+Math.random()*0.18)*dim;pc[i*3+2]=(1.00+Math.random()*0.00)*dim;}
+            else{pc[i*3]=(0.62+Math.random()*0.20)*dim;pc[i*3+1]=(0.68+Math.random()*0.18)*dim;pc[i*3+2]=(1.00)*dim;}
             ps[i]=0.72+Math.random()*1.40;
         }
         this._petroGeo=new THREE.BufferGeometry();
@@ -527,68 +532,64 @@ const Tab3 = {
         this._petroGeo.setAttribute('aScale',  new THREE.BufferAttribute(ps,1));
         this._petroMat=new THREE.ShaderMaterial({
             uniforms:{uSize:{value:2.4}},
-            vertexShader:this.STAR_VERT,fragmentShader:this.STAR_FRAG,
+            vertexShader:this.STAR_VERT,fragmentShader:this.PETRO_FRAG,
             transparent:true,blending:THREE.AdditiveBlending,depthWrite:false
         });
         this.scene.add(new THREE.Points(this._petroGeo,this._petroMat));
 
-        // ── 행성 구체 (Earth / Adrian / Erid) ────────
+        // ── 행성 구체 ────────────────────────────────
         this._objects=[]; this._planetUnis=[];
         this.BODIES.filter(b=>b.type==='planet').forEach(b=>{
-            const uni={uTime:{value:0}};
-            let frag, atmFrag;
-            if(b.name==='Earth'){
-                frag=this.EARTH_FRAG; atmFrag=this.EARTH_ATM_FRAG;
-            } else if(b.name==='Adrian'){
-                frag=this.ADRIAN_FRAG; atmFrag=this.ADRIAN_ATM_FRAG;
+            let uni={uTime:{value:0}};
+            let frag=null;
+            if(b.kind==='earth'){
+                frag=this.EARTH_FRAG;
+            } else if(b.kind==='adrian'){
+                frag=this.ADRIAN_FRAG;
+            } else if(b.kind==='erid') {
+                frag=this.ERID_FRAG;
             } else {
-                frag=this.ERID_FRAG;   atmFrag=this.ERID_ATM_FRAG;
+                frag=this.PLANET_GENERIC_FRAG;
+                uni=this._makeGenericPlanetUniforms(b.kind, b.color);
             }
-            this._planetUnis.push(uni);
             const g=new THREE.Group();
             g.position.set(...b.pos);
+            this._planetUnis.push(uni);
             g.add(new THREE.Mesh(
                 new THREE.SphereGeometry(b.r,64,64),
                 new THREE.ShaderMaterial({uniforms:uni,vertexShader:this.PLANET_VERT,fragmentShader:frag})
             ));
-            g.add(this._makeAtmosphere(b.r*1.20, atmFrag));
             g.add(this._makeGlow(b.r*2.8, b.glow, 0.045));
             this.scene.add(g);
-            this._objects.push({group:g});
+            this._objects.push({group:g, rot:b.rot || 0.1, kind:b.kind});
         });
 
+        this.scene.add(new THREE.AmbientLight(0x8888aa, 0.7));
+        const dir = new THREE.DirectionalLight(0xfff2de, 0.8);
+        dir.position.set(-2, 2, 3);
+        this.scene.add(dir);
+
         // ── 스크롤 ────────────────────────────────────
-        this._scroll=0; this._scrollT=0;
+        this._scroll=0.0; this._scrollT=0.0;
         this._label=document.getElementById('transit-label');
-        this._onWheel=e=>{this._scrollT=clamp(this._scrollT+e.deltaY*0.0007,0,1);};
+        this._onWheel=e=>{this._scrollT=clamp(this._scrollT+e.deltaY*0.0005,0,1);};
         window.addEventListener('wheel',this._onWheel,{passive:true});
         this._touchY=0;
-        this._onTouchStart=e=>{this._touchY=e.touches[0].clientY;};
-        this._onTouchMove=e=>{
-            const dy=this._touchY-e.touches[0].clientY;
-            this._touchY=e.touches[0].clientY;
-            this._scrollT=clamp(this._scrollT+dy*0.003,0,1);
+        this._onTouchStart=e=>{
+            const t=e.touches[0];
+            this._touchY=t.clientY;
         };
+        this._onTouchMove=e=>{
+            if (!e.touches.length) return;
+            const t=e.touches[0];
+            const dy=t.clientY-this._touchY;
+            this._touchY=t.clientY;
+            this._scrollT=clamp(this._scrollT+dy*0.0012,0,1);
+        };
+        this._onTouchEnd=()=>{};
         window.addEventListener('touchstart',this._onTouchStart,{passive:true});
         window.addEventListener('touchmove', this._onTouchMove, {passive:true});
-
-        // ── 마우스 시선 제어 ──────────────────────────
-        // 위치(몸)는 경로 고정, 시선만 드래그로 변경
-        this._onMouseDown=e=>{
-            this._isDragging=true;
-            this._prevMX=e.clientX; this._prevMY=e.clientY;
-        };
-        this._onMouseUp=()=>{this._isDragging=false;};
-        this._onMouseLook=e=>{
-            if(!this._isDragging) return;
-            const dx=e.clientX-this._prevMX, dy=e.clientY-this._prevMY;
-            this._prevMX=e.clientX; this._prevMY=e.clientY;
-            this._lookHT=clamp(this._lookHT-dx*0.005,-1.5,1.5);
-            this._lookVT=clamp(this._lookVT+dy*0.005,-0.75,0.75);
-        };
-        window.addEventListener('mousedown', this._onMouseDown);
-        window.addEventListener('mouseup',   this._onMouseUp);
-        window.addEventListener('mousemove', this._onMouseLook);
+        window.addEventListener('touchend', this._onTouchEnd, {passive:true});
     },
 
     _getLabel(t){
@@ -603,28 +604,25 @@ const Tab3 = {
         const s=this._scroll;
 
         // 카메라 위치 (스크롤 경로 고정)
-        const tz=14-s*118;
-        this.camera.position.z=lerp(this.camera.position.z,tz,0.055);
-        this.camera.position.x=Math.sin(s*Math.PI*3.2)*3.2;
-        this.camera.position.y=Math.sin(s*Math.PI*2.1)*2.0;
+        const tz=14-s*136;
+        this.camera.position.z=lerp(this.camera.position.z,tz,0.075);
+        this.camera.position.x=Math.sin(s*Math.PI*2.8)*2.5 + Math.sin(s*Math.PI*8.0)*0.4;
+        // 시작 시 높은 위치에서 내려다보다 스크롤하면 자연스럽게 경로로 합류
+        const startLift = Math.max(0, 3.5 - s * 55.0);
+        const ty = Math.sin(s*Math.PI*1.7)*1.6 + startLift;
+        this.camera.position.y = lerp(this.camera.position.y, ty, 0.05);
 
-        // 시선 보간 (마우스 드래그)
-        this._lookH=lerp(this._lookH,this._lookHT,0.10);
-        this._lookV=lerp(this._lookV,this._lookVT,0.10);
-
-        // lookAt: 기본 전방 + 마우스 오프셋
+        // lookAt: 스크롤 경로 전방 고정
         const baseX=this.camera.position.x*0.2;
         const baseY=this.camera.position.y*0.2;
         const baseZ=this.camera.position.z-12;
-        const LOOK_D=18;
-        this.camera.lookAt(
-            baseX+Math.sin(this._lookH)*LOOK_D,
-            baseY+this._lookV*LOOK_D,
-            baseZ
-        );
+        this.camera.lookAt(baseX, baseY, baseZ);
 
         // 행성 자전
-        this._objects.forEach(({group})=>{group.rotation.y+=(delta||0.016)*0.12;});
+        this._objects.forEach(({group, rot, kind})=>{
+            const mult = kind === 'gas' ? 1.25 : 1.0;
+            group.rotation.y += (delta||0.016) * rot * mult;
+        });
 
         // 셰이더 시간 업데이트
         if(this._planetUnis) this._planetUnis.forEach(u=>{u.uTime.value=elapsed;});
@@ -645,9 +643,7 @@ const Tab3 = {
         if(this._onWheel)      window.removeEventListener('wheel',      this._onWheel);
         if(this._onTouchStart) window.removeEventListener('touchstart', this._onTouchStart);
         if(this._onTouchMove)  window.removeEventListener('touchmove',  this._onTouchMove);
-        if(this._onMouseDown)  window.removeEventListener('mousedown',  this._onMouseDown);
-        if(this._onMouseUp)    window.removeEventListener('mouseup',    this._onMouseUp);
-        if(this._onMouseLook)  window.removeEventListener('mousemove',  this._onMouseLook);
+        if(this._onTouchEnd)   window.removeEventListener('touchend',   this._onTouchEnd);
 
         this._objects.forEach(({group})=>{
             group.children.forEach(c=>{c.geometry.dispose();c.material.dispose();});
